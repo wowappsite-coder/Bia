@@ -188,6 +188,7 @@ async function startBot() {
       keys: makeCacheableSignalKeyStore(state.keys, logger)
     },
     printQRInTerminal: false,
+    usePairingCode: true,
     logger: pino({ level: 'silent' }),
     generateHighQualityLinkPreview: false,
     syncFullHistory: false,

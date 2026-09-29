@@ -1,0 +1,117 @@
+const { token, tag } = require('../../utils/mention');
+const db = require('../../database');
+
+const RANK_ATTRIBUTES = [
+  'gay', 'lesbica', 'burro', 'inteligente', 'otaku', 'fiel', 'infiel', 'corno',
+  'gado', 'gostoso', 'rico', 'pobre', 'forte', 'pegador', 'macho', 'nerd',
+  'trabalhador', 'brabo', 'lindo', 'malandro', 'engracado', 'charmoso',
+  'visionario', 'poderoso', 'vencedor', 'sigma', 'beta', 'louco', 'casal'
+];
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+
+async function getGroupMemberIds(ctx) {
+  if (!ctx.isGroup) return [];
+  try {
+    const meta = await ctx.sock.groupMetadata(ctx.jid);
+    return (meta.participants || []).map(p => p.id || p.jid).filter(Boolean);
+  } catch (e) {
+    return [];
+  }
+}
+
+function makeRankCommand(attr) {
+  return {
+    name: 'rank' + attr,
+    category: 'xp',
+    description: 'Ranking aleatorio de ' + attr + ' (5 membros)',
+    groupOnly: true,
+    handler: async (ctx) => {
+      try {
+        let members = await getGroupMemberIds(ctx);
+        try {
+          const botId = ctx.sock.user && (ctx.sock.user.id || '');
+          const botNum = String(botId).split(':')[0].split('@')[0];
+          members = members.filter(id => String(id).split(':')[0].split('@')[0] !== botNum);
+        } catch (_) {}
+
+        if (!members.length) return ctx.reply('❌ Não consegui listar os membros.');
+
+        const picked = shuffle(members).slice(0, Math.min(5, members.length));
+        const scored = picked
+          .map(jid => ({ jid, value: Math.floor(Math.random() * 101) }))
+          .sort((a, b) => b.value - a.value);
+
+        const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+        let text = '🏆 *RANK ' + attr.toUpperCase() + '*\n\n';
+        const mentions = [];
+        scored.forEach((r, i) => {
+          text += (medals[i] || (String(i + 1) + '.')) + ' ' + tag(r.jid) + ' — *' + r.value + '%*\n';
+          mentions.push(r.jid);
+        });
+        await ctx.reply(text.trim(), { mentions });
+      } catch (e) {
+        console.error(e);
+        await ctx.reply('❌ Erro ao gerar ranking.');
+      }
+    }
+  };
+}
+
+module.exports = [
+  {
+    name: 'rank',
+    aliases: ['ranking', 'top', 'toplist'],
+    category: 'xp',
+    description: 'Ranking de XP',
+    groupOnly: true,
+    handler: async (ctx) => {
+      try {
+        const database = db.getDb();
+        const rows = database.prepare(`
+          SELECT u.jid, g.xp, g.level FROM user_group_data g
+          JOIN users u ON u.jid = g.jid
+          WHERE g.group_jid = ? ORDER BY g.xp DESC LIMIT 10
+        `).all(require('../../database').getScope());
+        if (!rows.length) {
+          const members = await getGroupMemberIds(ctx);
+          const picked = shuffle(members).slice(0, 5);
+          let text = '⭐ *RANKING XP*\n\n';
+          const mentions = [];
+          picked.forEach((jid, i) => {
+            text += (['🥇','🥈','🥉','4️⃣','5️⃣'][i] || '') + ' ' + tag(jid) + '\n';
+            mentions.push(jid);
+          });
+          return ctx.reply(text.trim(), { mentions });
+        }
+        let text = '⭐ *RANKING XP*\n\n';
+        const mentions = [];
+        rows.forEach((r, i) => {
+          text += (['🥇','🥈','🥉'][i] || ((i+1)+'.')) + ' ' + tag(r.jid) + '\n   ⭐ ' + r.xp + ' XP\n';
+          mentions.push(r.jid);
+        });
+        await ctx.reply(text.trim(), { mentions });
+      } catch (e) {
+        await ctx.reply('❌ Erro no ranking.');
+      }
+    }
+  },
+  {
+    name: 'meuxp',
+    aliases: ['xp', 'nivel', 'level', 'perfil'],
+    category: 'xp',
+    description: 'Seu XP',
+    handler: async (ctx) => {
+      const u = ctx.user;
+      await ctx.reply('⭐ *Seu XP*\n\n⭐ ' + u.xp + ' XP | Nível ' + u.level + '\n💬 ' + u.messages + ' msgs');
+    }
+  },
+  ...RANK_ATTRIBUTES.map(makeRankCommand)
+];

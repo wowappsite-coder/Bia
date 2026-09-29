@@ -1,0 +1,78 @@
+/**
+ * Delay variavel + fila por chat (anti-spam) — versao mais rapida
+ */
+const queues = new Map();
+const lastSent = new Map();
+
+function rand(minMs, maxMs) {
+  return minMs + Math.floor(Math.random() * (maxMs - minMs + 1));
+}
+function sleep(ms) {
+  return new Promise(function (r) { setTimeout(r, ms); });
+}
+
+function detectType(content, options) {
+  const opts = options || {};
+  const mentions = (opts.mentions || (content && content.mentions) || []).length;
+  if (mentions >= 3) return 'mentions';
+  if (content && typeof content === 'object') {
+    if (content.image || content.video || content.document) return 'media';
+    if (content.audio || content.sticker || content.ptt) return 'audio';
+    if (content.text) {
+      const t = String(content.text).toLowerCase();
+      if (t.indexOf('menu') !== -1 || t.indexOf('comandos') !== -1 || t.indexOf('╭──') !== -1 || t.indexOf('┏━━') !== -1) {
+        return 'menu';
+      }
+    }
+  }
+  if (typeof content === 'string') {
+    const t = content.toLowerCase();
+    if (t.indexOf('menu') !== -1 || t.indexOf('╭──') !== -1 || t.indexOf('┏━━') !== -1) return 'menu';
+  }
+  return 'simple';
+}
+
+function delayRange(type) {
+  // mais rapido que a versao anterior
+  switch (type) {
+    case 'media':    return [800, 1500];   // era 2–3s
+    case 'audio':    return [600, 1200];   // era 1.5–3s
+    case 'menu':     return [600, 1200];   // era 1.5–2.5s
+    case 'mentions': return [1200, 2200];  // era 3–5s
+    default:         return [500, 1000];   // simple: era 1.5–2.5s
+  }
+}
+
+async function showTyping(sock, jid, ms) {
+  try { await sock.sendPresenceUpdate('composing', jid); } catch (_) {}
+  await sleep(ms);
+  try { await sock.sendPresenceUpdate('paused', jid); } catch (_) {}
+}
+
+function enqueue(jid, task) {
+  const prev = queues.get(jid) || Promise.resolve();
+  const next = prev.then(task).catch(function (e) {
+    console.error('[sendDelay]', e && e.message ? e.message : e);
+  });
+  queues.set(jid, next.then(function () {}, function () {}));
+  return next;
+}
+
+async function withDelay(sock, jid, content, options, sendFn) {
+  const type = detectType(content, options);
+  const range = delayRange(type);
+  const ms = rand(range[0], range[1]);
+
+  return enqueue(jid, async function () {
+    const last = lastSent.get(jid) || 0;
+    const gap = Date.now() - last;
+    if (gap < 250) await sleep(250 - gap); // gap minimo menor
+
+    await showTyping(sock, jid, ms);
+    const result = await sendFn();
+    lastSent.set(jid, Date.now());
+    return result;
+  });
+}
+
+module.exports = { withDelay, detectType, delayRange, rand, sleep };

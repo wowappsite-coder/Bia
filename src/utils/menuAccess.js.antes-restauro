@@ -1,0 +1,146 @@
+const { isOwnerJid } = require('./ownerCheck');
+/**
+ * Controlo de acesso a menus sensíveis
+ * menuadm / menumodos -> Owner + Admin
+ * menudono -> só Owner
+ */
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+const MSGS_ADM = [
+  "╭━━━〔 🚫 ACESSO NEGADO 〕━━━╮\n┃\n┃ 👤 Usuário: @{user}\n┃ 🔒 Nível: Membro Normal\n┃\n┃ Este menu é exclusivo para\n┃ 👑 Dono e 🛡️ Administradores.\n┃\n┃ ❌ Você não possui permissão\n┃ para usar este comando.\n┃\n╰━━━━━━━━━━━━━━━━━━━━╯\n🤖 BEATRIZ • Sistema de Segurança",
+  "╭━━━〔 🚫 ACESSO NEGADO 〕━━━╮\n┃\n┃ 👤 @{user}\n┃\n┃ Menu ADM só para\n┃ 👑 Dono e 🛡️ Admins.\n┃\n╰━━━━━━━━━━━━━━━━━━━━╯",
+  "🚫 Acesso negado, @{user}.\nMenu ADM = só Admin/Dono."
+];
+const MSGS_DONO = [
+  "╭━━━〔 🚫 ACESSO NEGADO 〕━━━╮\n┃\n┃ 👤 Usuário: @{user}\n┃ 🔒 Nível: Sem permissão de Dono\n┃\n┃ Este menu é exclusivo do\n┃ 👑 DONO do bot.\n┃\n╰━━━━━━━━━━━━━━━━━━━━╯\n🤖 BEATRIZ • Sistema de Segurança",
+  "🚫 Só o 👑 Dono pode abrir o Menu Dono.\n@{user}, acesso negado."
+];
+
+function isOwner(ctx) {
+  try {
+    if ((ctx.isOwner === true) || (typeof isOwnerJid === "function" && isOwnerJid(ctx.sender || ctx.senderJid || ctx.participant || ""))) return true;
+    if (typeof ctx.isOwner === 'function' && ctx.isOwner()) return true;
+    const sender = String(ctx.sender || ctx.senderJid || ctx.participant || '').replace(/\D/g, '');
+    const owner = String(process.env.OWNER_NUMBER || process.env.OWNER || '').replace(/\D/g, '');
+    const ownerLid = String(process.env.OWNER_LID || '').replace(/\D/g, '');
+    if (owner && sender && sender.endsWith(owner.slice(-9))) return true;
+    if (ownerLid && String(ctx.sender || '').includes(ownerLid)) return true;
+    if (ctx.db && typeof ctx.db.isOwner === 'function') {
+      if (ctx.db.isOwner(ctx.sender)) return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function isAdmin(ctx) {
+  try {
+    if (ctx.isAdmin === true) return true;
+    if (typeof ctx.isAdmin === 'function' && ctx.isAdmin()) return true;
+    if (ctx.isGroupAdmin === true) return true;
+    if (ctx.senderIsAdmin === true) return true;
+    if (Array.isArray(ctx.admins) && ctx.admins.includes(ctx.sender)) return true;
+  } catch (e) {}
+  return false;
+}
+
+/**
+ * @param {'adm'|'dono'|'modos'} tipo
+ * @returns {Promise<boolean>} true = pode continuar; false = bloqueado (já respondeu)
+ */
+async function guardMenu(ctx, tipo) {
+  const user = (ctx.pushName || ctx.name || 'usuário').toString().slice(0, 32);
+  const owner = isOwner(ctx);
+  const admin = isAdmin(ctx) || owner;
+
+  if (tipo === 'dono') {
+    if (owner) return true;
+    const msg = pick(MSGS_DONO).replace(/@\{user\}/g, user);
+    try { await ctx.reply(msg); } catch (e) {}
+    return false;
+  }
+
+  // adm + modos
+  if (admin) return true;
+  const msg = pick(MSGS_ADM).replace(/@\{user\}/g, user);
+  try { await ctx.reply(msg); } catch (e) {}
+  return false;
+}
+
+
+async function resolveIsAdmin(ctx) {
+  try {
+    if (ctx.isOwner === true) return true;
+    if (ctx.isAdmin === true || ctx.senderIsAdmin === true || ctx.isGroupAdmin === true) return true;
+    const sock = ctx.sock;
+    const jid = ctx.jid || ctx.chatId || (ctx.msg && ctx.msg.key && ctx.msg.key.remoteJid);
+    const sender = String(ctx.sender || ctx.senderJid || ctx.participant || (ctx.msg && (ctx.msg.key.participant || ctx.msg.key.remoteJid)) || '');
+    if (!sock || !jid || !String(jid).endsWith('@g.us')) return false;
+    const meta = await sock.groupMetadata(jid);
+    const parts = meta.participants || [];
+    const me = parts.find(p => {
+      const id = String(p.id || p.jid || '');
+      return id === sender || id.split('@')[0] === sender.split('@')[0] ||
+        (p.lid && String(p.lid) === sender);
+    });
+    if (!me) return false;
+    const admin = me.admin === 'admin' || me.admin === 'superadmin' || me.isAdmin || me.isSuperAdmin;
+    return !!admin;
+  } catch (e) {
+    return false;
+  }
+}
+
+function isOwner(ctx) {
+  try {
+    if (ctx.isOwner === true) return true;
+    const sender = String(ctx.sender || ctx.senderJid || ctx.participant || '').replace(/\D/g, '');
+    const owner = String(process.env.OWNER_NUMBER || process.env.OWNER || '874288439').replace(/\D/g, '');
+    const ownerLid = String(process.env.OWNER_LID || '').replace(/\D/g, '');
+    if (owner && sender && (sender.endsWith(owner) || sender.endsWith(owner.slice(-9)))) return true;
+    if (ownerLid && String(ctx.sender || '').includes(ownerLid)) return true;
+  } catch (e) {}
+  return false;
+}
+
+function isAdmin(ctx) {
+  // sync fallback — prefer resolveIsAdmin no guard
+  try {
+    if (ctx.isOwner === true) return true;
+    if (ctx.isAdmin === true || ctx.senderIsAdmin === true || ctx.isGroupAdmin === true) return true;
+  } catch (e) {}
+  return false;
+}
+
+
+async function guardMenu(ctx, tipo) {
+  const user = (ctx.pushName || ctx.name || 'usuario').toString().slice(0, 32);
+  const owner = isOwner(ctx);
+  let admin = isAdmin(ctx) || owner;
+  if (!admin) {
+    try { admin = await resolveIsAdmin(ctx); } catch (e) {}
+    admin = admin || owner;
+  }
+
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  if (tipo === 'dono') {
+    if (owner) return true;
+    const msg = pick(MSGS_DONO).replace(/@\{user\}/g, '@' + user);
+    try { await ctx.reply(msg); } catch (e) {}
+    return false;
+  }
+  if (admin) return true;
+  const msg = pick(MSGS_ADM).replace(/@\{user\}/g, '@' + user);
+  try { await ctx.reply(msg); } catch (e) {}
+  return false;
+}
+
+module.exports = {
+  guardMenu,
+  isOwner,
+  isAdmin,
+  MSGS_ADM,
+  MSGS_DONO
+};

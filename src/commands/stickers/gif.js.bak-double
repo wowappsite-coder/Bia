@@ -1,0 +1,408 @@
+/**
+ * gif — figurinha animada -> GIF
+ * Download identico ao sticker.js (msgCache + baileys)
+ */
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
+
+let downloadMediaMessage = null;
+let downloadContentFromMessage = null;
+try {
+  const b = require('@whiskeysockets/baileys');
+  downloadMediaMessage = b.downloadMediaMessage;
+  downloadContentFromMessage = b.downloadContentFromMessage;
+} catch (_) {
+  try {
+    const b = require('@adiwajshing/baileys');
+    downloadMediaMessage = b.downloadMediaMessage;
+    downloadContentFromMessage = b.downloadContentFromMessage;
+  } catch (_2) {}
+}
+
+let msgCache = null;
+try {
+  msgCache = require('../../utils/msgCache');
+} catch (_) {
+  try {
+    msgCache = require('../../../utils/msgCache');
+  } catch (_2) {}
+}
+
+const silentLogger = {
+  level: 'silent',
+  trace() {},
+  debug() {},
+  info() {},
+  warn() {},
+  error() {},
+  fatal() {},
+  child() {
+    return this;
+  }
+};
+
+function unwrap(msg) {
+  if (!msg) return msg;
+  if (msg.ephemeralMessage?.message) return unwrap(msg.ephemeralMessage.message);
+  if (msg.viewOnceMessage?.message) return unwrap(msg.viewOnceMessage.message);
+  if (msg.viewOnceMessageV2?.message) return unwrap(msg.viewOnceMessageV2.message);
+  if (msg.documentWithCaptionMessage?.message) {
+    return unwrap(msg.documentWithCaptionMessage.message);
+  }
+  return msg;
+}
+
+function resolveSticker(ctx) {
+  const msg = ctx.msg;
+  if (!msg) return null;
+  let m = unwrap(msg.message || {});
+
+  // 1) cache da mensagem original (como sticker.js)
+  try {
+    if (msgCache && msgCache.getQuotedFull) {
+      const full = msgCache.getQuotedFull(msg);
+      if (full && full.message) {
+        const inner = unwrap(full.message);
+        if (inner.stickerMessage) {
+          return {
+            targetMsg: full,
+            mediaNode: inner.stickerMessage,
+            fromCache: true
+          };
+        }
+      }
+    }
+  } catch (_) {}
+
+  const ci =
+    m.extendedTextMessage?.contextInfo ||
+    m.imageMessage?.contextInfo ||
+    m.videoMessage?.contextInfo ||
+    m.stickerMessage?.contextInfo ||
+    null;
+
+  let quoted = ci && ci.quotedMessage ? unwrap(ci.quotedMessage) : null;
+
+  if (quoted && quoted.stickerMessage) {
+    return {
+      targetMsg: {
+        key: {
+          remoteJid: msg.key.remoteJid,
+          id: ci.stanzaId,
+          participant: ci.participant,
+          fromMe: false
+        },
+        message: quoted
+      },
+      mediaNode: quoted.stickerMessage,
+      fromCache: false
+    };
+  }
+
+  // sticker na propria msg
+  if (m.stickerMessage) {
+    return { targetMsg: msg, mediaNode: m.stickerMessage, fromCache: false };
+  }
+  return null;
+}
+
+async function streamToBuffer(stream) {
+  const chunks = [];
+  for await (const c of stream) chunks.push(c);
+  return Buffer.concat(chunks);
+}
+
+async function getBuffer(ctx, info) {
+  const sock = ctx.sock;
+
+  if (downloadMediaMessage && info.targetMsg) {
+    try {
+      const buf = await downloadMediaMessage(
+        info.targetMsg,
+        'buffer',
+        {},
+        {
+          logger: silentLogger,
+          reuploadRequest: sock.updateMediaMessage
+            ? sock.updateMediaMessage.bind(sock)
+            : undefined
+        }
+      );
+      if (buf && buf.length > 50) {
+        console.log('[gif] dmm ok', buf.length, 'cache=', !!info.fromCache);
+        return Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+      }
+    } catch (e) {
+      console.error('[gif] dmm', e.message);
+    }
+  }
+
+  if (downloadContentFromMessage && info.mediaNode) {
+    try {
+      const stream = await downloadContentFromMessage(info.mediaNode, 'sticker');
+      const buf = await streamToBuffer(stream);
+      if (buf && buf.length > 50) {
+        console.log('[gif] content ok', buf.length);
+        return buf;
+      }
+    } catch (e) {
+      console.error('[gif] content', e.message);
+    }
+  }
+
+  if (downloadMediaMessage && info.mediaNode) {
+    try {
+      const fake = {
+        key: info.targetMsg?.key || ctx.msg.key,
+        message: { stickerMessage: info.mediaNode }
+      };
+      const buf = await downloadMediaMessage(fake, 'buffer', {}, {
+        logger: silentLogger,
+        reuploadRequest: sock.updateMediaMessage
+          ? sock.updateMediaMessage.bind(sock)
+          : undefined
+      });
+      if (buf && buf.length > 50) {
+        console.log('[gif] dmm2 ok', buf.length);
+        return Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+      }
+    } catch (e) {
+      console.error('[gif] dmm2', e.message);
+    }
+  }
+
+  return null;
+}
+
+
+async function convert(webpBuf) {
+  const dir = path.join(os.tmpdir(), 'beatriz-gif');
+  fs.mkdirSync(dir, { recursive: true });
+  const id = 'g' + Date.now();
+  const webp = path.join(dir, id + '.webp');
+  const gif = path.join(dir, id + '.gif');
+  const mp4 = path.join(dir, id + '.mp4');
+  fs.writeFileSync(webp, webpBuf);
+
+  // 1) SHARP (melhor no Termux para webp animado)
+  try {
+    const sharp = require('sharp');
+    const out = await sharp(webpBuf, { animated: true, pages: -1 })
+      .gif({ effort: 4 })
+      .toBuffer();
+    if (out && out.length > 100) {
+      console.log('[gif] sharp gif', out.length);
+      try { fs.unlinkSync(webp); } catch (_) {}
+      return { buf: out, kind: 'gif' };
+    }
+  } catch (e) {
+    console.error('[gif] sharp', e.message);
+  }
+
+  // 2) ffmpeg variantes
+  const ffmpegs = [
+    ['-y', '-i', webp, '-loop', '0', gif],
+    ['-y', '-c:v', 'libwebp', '-i', webp, '-loop', '0', gif],
+    ['-y', '-i', webp, '-vf', 'fps=12,scale=512:-1', '-loop', '0', gif],
+    ['-y', '-i', webp, '-movflags', 'faststart', '-pix_fmt', 'yuv420p', '-an', mp4],
+    ['-y', '-c:v', 'libwebp', '-i', webp, '-movflags', 'faststart', '-pix_fmt', 'yuv420p', '-an', mp4]
+  ];
+  for (const args of ffmpegs) {
+    try {
+      await execFileAsync('ffmpeg', args, { timeout: 90000 });
+      const out = args[args.length - 1];
+      if (fs.existsSync(out) && fs.statSync(out).size > 100) {
+        const buf = fs.readFileSync(out);
+        const kind = out.endsWith('.mp4') ? 'mp4' : 'gif';
+        console.log('[gif] ffmpeg', kind, buf.length);
+        try { fs.unlinkSync(webp); } catch (_) {}
+        try { fs.unlinkSync(gif); } catch (_) {}
+        try { fs.unlinkSync(mp4); } catch (_) {}
+        return { buf, kind };
+      }
+    } catch (e) {
+      console.error('[gif] ff', (e.stderr || e.message || '').toString().slice(0, 200));
+    }
+  }
+
+  // 3) webpmux + frames (libwebp) — monta gif via ffmpeg a partir de pngs
+  try {
+    const info = await execFileAsync('webpmux', ['-info', webp], { timeout: 15000 });
+    const out = (info.stdout || '').toString();
+    const frames = [];
+    const re = /Canvas size|Number of frames:\s*(\d+)/i;
+    const fm = out.match(/Number of frames:\s*(\d+)/i);
+    const n = fm ? parseInt(fm[1], 10) : 0;
+    if (n > 1) {
+      const frameDir = path.join(dir, id + '-fr');
+      fs.mkdirSync(frameDir, { recursive: true });
+      for (let i = 1; i <= Math.min(n, 60); i++) {
+        const fr = path.join(frameDir, 'f' + String(i).padStart(3, '0') + '.png');
+        try {
+          await execFileAsync('webpmux', ['-get', 'frame', String(i), webp, '-o', fr + '.webp'], { timeout: 10000 });
+          const fw = fr + '.webp';
+          if (fs.existsSync(fw)) {
+            await execFileAsync('dwebp', [fw, '-o', fr], { timeout: 10000 });
+            if (fs.existsSync(fr)) frames.push(fr);
+            try { fs.unlinkSync(fw); } catch (_) {}
+          }
+        } catch (_) {}
+      }
+      if (frames.length > 1) {
+        const pattern = path.join(frameDir, 'f%03d.png');
+        // renumber if needed — already f001
+        await execFileAsync(
+          'ffmpeg',
+          ['-y', '-framerate', '12', '-i', path.join(frameDir, 'f%03d.png'), '-loop', '0', gif],
+          { timeout: 90000 }
+        );
+        if (fs.existsSync(gif) && fs.statSync(gif).size > 100) {
+          const buf = fs.readFileSync(gif);
+          console.log('[gif] frames', buf.length);
+          try { fs.unlinkSync(webp); } catch (_) {}
+          try { fs.unlinkSync(gif); } catch (_) {}
+          for (const f of frames) { try { fs.unlinkSync(f); } catch (_) {} }
+          return { buf, kind: 'gif' };
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[gif] webpmux', e.message);
+  }
+
+  try { fs.unlinkSync(webp); } catch (_) {}
+  try { fs.unlinkSync(gif); } catch (_) {}
+  try { fs.unlinkSync(mp4); } catch (_) {}
+  return null;
+}
+
+module.exports = [
+  {
+    name: 'gif',
+    aliases: ['sticker2gif', 'webp2gif', 'togif'],
+    category: 'stickers',
+    description: 'Figurinha animada -> GIF',
+    handler: async (ctx) => {
+      const info = resolveSticker(ctx);
+      if (!info || !info.mediaNode) {
+        return ctx.reply(
+          '📎 *Como usar:*\n1) A figurinha animada tem de estar no chat\n2) *Responde* a ela com *gif*\n\n(Se a figurinha for antiga, envia de novo e responde.)'
+        );
+      }
+
+      if (info.mediaNode.isAnimated === false) {
+        return ctx.reply('⚠️ So funciona com figurinha *animada* (nao estatica).');
+      }
+
+      try {
+        await ctx.sock.sendMessage(ctx.jid, {
+          react: { text: '⏳', key: ctx.msg.key }
+        });
+      } catch (_) {}
+
+      let statusKey = null;
+      try {
+        const st = await ctx.reply('⏳ A converter...');
+        statusKey = st && st.key;
+      } catch (_) {}
+
+      try {
+        const buffer = await getBuffer(ctx, info);
+        if (!buffer) {
+          return ctx.reply(
+            '❌ Nao baixou a figurinha.\n\n' +
+              '1) Envia a figurinha *de novo* no chat\n' +
+              '2) Responde *a essa* com *gif*\n' +
+              '(O bot precisa da midia em cache, como no *s* / *toimg*)'
+          );
+        }
+
+        const conv = await convert(buffer);
+        if (!conv) {
+          return ctx.reply(
+            '❌ Download OK, mas a conversao falhou.\nVerifica: *pkg install ffmpeg*'
+          );
+        }
+
+        
+        // Um unico envio: GIF inline no WhatsApp (mp4 + gifPlayback)
+        // Se so tivermos gif, converte para mp4 para nao ir como "arquivo"
+        let sendBuf = conv.buf;
+        let asGifVideo = conv.kind === 'mp4';
+
+        if (conv.kind === 'gif') {
+          // tenta reencode gif -> mp4 para playback nativo
+          try {
+            const dir = path.join(os.tmpdir(), 'beatriz-gif');
+            fs.mkdirSync(dir, { recursive: true });
+            const g = path.join(dir, 'in' + Date.now() + '.gif');
+            const m = path.join(dir, 'out' + Date.now() + '.mp4');
+            fs.writeFileSync(g, conv.buf);
+            await execFileAsync(
+              'ffmpeg',
+              [
+                '-y',
+                '-i',
+                g,
+                '-movflags',
+                'faststart',
+                '-pix_fmt',
+                'yuv420p',
+                '-vf',
+                'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+                '-an',
+                m
+              ],
+              { timeout: 90000 }
+            );
+            if (fs.existsSync(m) && fs.statSync(m).size > 100) {
+              sendBuf = fs.readFileSync(m);
+              asGifVideo = true;
+            }
+            try { fs.unlinkSync(g); } catch (_) {}
+            try { fs.unlinkSync(m); } catch (_) {}
+          } catch (e) {
+            console.error('[gif] gif->mp4', e.message);
+          }
+        }
+
+        if (asGifVideo) {
+          await ctx.sock.sendMessage(
+            ctx.jid,
+            {
+              video: sendBuf,
+              gifPlayback: true,
+              mimetype: 'video/mp4'
+            },
+            { quoted: ctx.msg }
+          );
+        } else {
+          // ultimo recurso: imagem gif (alguns clientes abrem)
+          await ctx.sock.sendMessage(
+            ctx.jid,
+            {
+              video: sendBuf,
+              gifPlayback: true
+            },
+            { quoted: ctx.msg }
+          );
+        }
+);
+        } catch (_) {}
+      } catch (e) {
+        console.error('[gif] fatal', e);
+        await ctx.reply('❌ Erro: ' + (e.message || 'falha'));
+      } finally {
+        try {
+          if (statusKey) {
+            await ctx.sock.sendMessage(ctx.jid, { delete: statusKey });
+          }
+        } catch (_) {}
+      }
+    }
+  }
+];

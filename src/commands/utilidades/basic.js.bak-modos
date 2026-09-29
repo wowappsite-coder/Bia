@@ -1,0 +1,317 @@
+const config = require('../../config');
+const os = require('os');
+const crypto = require('crypto');
+function uuidv4() {
+  return crypto.randomUUID ? crypto.randomUUID() : ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+    (c ^ crypto.randomBytes(1)[0] & 15 >> c / 4).toString(16)
+  );
+}
+
+module.exports = [
+  {
+    name: 'ping',
+    aliases: ['latency', 'latencia'],
+    category: 'utilidades',
+    description: 'Verifica a latência do bot',
+    handler: async (ctx) => {
+      const start = Date.now();
+      const msg = await ctx.reply('🏓 Pong...');
+      const latency = Date.now() - start;
+      await ctx.sock.sendMessage(ctx.jid, {
+        text: `🏓 *Pong!*\n⚡ Latência: ${latency}ms\n🤖 ${config.botName}`,
+        edit: msg.key
+      }).catch(() => ctx.reply(`🏓 *Pong!*\n⚡ Latência: ${latency}ms`));
+    }
+  },
+  {
+    name: 'menu',
+    aliases: ['help', 'ajuda', 'comandos'],
+    category: 'utilidades',
+    description: 'Menu principal do bot',
+    handler: async (ctx) => {
+      const { generateMainMenu, generateCategoryMenu, CATEGORY_META } = require('../../utils/menu');
+      const arg = (ctx.args[0] || '').toLowerCase().normalize('NFD').replace(/\u0300-\u036f/g, '');
+      const map = {
+        adm: 'admin', admin: 'admin', administrador: 'admin',
+        dono: 'dono', owner: 'dono',
+        grupo: 'grupo', group: 'grupo',
+        internet: 'internet', net: 'internet',
+        bn: 'bn', brincadeira: 'bn', brincadeiras: 'bn',
+        diversao: 'diversao', diversão: 'diversao',
+        sticker: 'stickers', stickers: 'stickers', fig: 'stickers', figurinha: 'stickers',
+        imagem: 'imagem', img: 'imagem', image: 'imagem',
+        seguranca: 'seguranca', segurança: 'seguranca', anti: 'seguranca',
+        utilidades: 'utilidades', util: 'utilidades', tools: 'utilidades',
+        rpg: 'rpg', familia: 'rpg', família: 'rpg',
+        xp: 'xp', rank: 'xp', ranking: 'xp',
+        economia: 'economia', econ: 'economia', money: 'economia',
+        aluguel: 'aluguel', assinatura: 'aluguel', rent: 'aluguel',
+        download: 'download', dl: 'download', down: 'download', baixar: 'download'
+      };
+      if (arg === 'download' || arg === 'dl' || arg === 'down' || arg === 'baixar') {
+        const reg = require('../registry');
+        const c = reg.get('menudownload');
+        if (c && c.handler) return c.handler(ctx);
+        return ctx.reply('Use: *menudownload*');
+      }
+      if (arg && map[arg]) {
+        return ctx.reply(generateCategoryMenu(map[arg]));
+      }
+      if (arg && CATEGORY_META[arg]) {
+        return ctx.reply(generateCategoryMenu(arg));
+      }
+      await ctx.reply(generateMainMenu());
+    }
+  },
+  {
+    name: 'meuid',
+    aliases: ['myid', 'meu_id', 'jid'],
+    category: 'utilidades',
+    description: 'Mostra seu ID/número visto pelo bot',
+    handler: async (ctx) => {
+      const owner = require('../../config').ownerNumber;
+      await ctx.reply(
+        `🆔 *Seu ID*\n` +
+        `Sender: ${ctx.sender}\n` +
+        `É dono? ${ctx.isOwner() ? 'SIM ✅' : 'NÃO ❌'}\n` +
+        `Dono configurado: ${owner}\n\n` +
+        `Se for NÃO e você é o dono, coloque no .env:\nOWNER_NUMBER=seu_numero`
+      );
+    }
+  },
+  {
+    name: 'info',
+    aliases: ['botinfo', 'sobre'],
+    category: 'utilidades',
+    description: 'Informações do bot',
+    handler: async (ctx) => {
+      const uptime = process.uptime();
+      const h = Math.floor(uptime / 3600);
+      const m = Math.floor((uptime % 3600) / 60);
+      const s = Math.floor(uptime % 60);
+      const mem = (process.memoryUsage().rss / 1024 / 1024).toFixed(1);
+      const stats = require('../registry').stats();
+
+      const text = `┏━━━━━━━━━━━━━━━━━━┓
+┃ 🤖 *${config.botName}*
+┣━━━━━━━━━━━━━━━━━━┫
+┃ 👑 Dono: ${config.ownerNumber}
+┃ 📱 Bot: ${config.botNumber}
+┃ ⏱ Uptime: ${h}h ${m}m ${s}s
+┃ 💾 RAM: ${mem} MB
+┃ 📦 Comandos: ${stats.totalMain}
+┃ 🔗 Prefixos: ${config.prefixes.join(' ')}
+┃ 📅 ${new Date().toLocaleString('pt-MZ')}
+┗━━━━━━━━━━━━━━━━━━┛`;
+      await ctx.reply(text);
+    }
+  },
+  {
+    name: 'runtime',
+    aliases: ['uptime', 'tempo'],
+    category: 'utilidades',
+    description: 'Tempo de atividade do bot',
+    handler: async (ctx) => {
+      const uptime = process.uptime();
+      const d = Math.floor(uptime / 86400);
+      const h = Math.floor((uptime % 86400) / 3600);
+      const m = Math.floor((uptime % 3600) / 60);
+      const s = Math.floor(uptime % 60);
+      await ctx.reply(`⏱ *Runtime*\n${d}d ${h}h ${m}m ${s}s`);
+    }
+  },
+  {
+    name: 'owner',
+    aliases: ['criador', 'dono'],
+    category: 'utilidades',
+    description: 'Mostra o dono do bot',
+    handler: async (ctx) => {
+      await ctx.reply(`👑 *Dono do ${config.botName}*\n\nNúmero: ${config.ownerNumber}\n\nContato: wa.me/${config.ownerNumber}`);
+    }
+  },
+  {
+    name: 'hora',
+    aliases: ['time', 'horario'],
+    category: 'utilidades',
+    description: 'Mostra a hora atual',
+    handler: async (ctx) => {
+      const now = new Date();
+      const opts = { timeZone: config.timezone, hour: '2-digit', minute: '2-digit', second: '2-digit' };
+      const dateOpts = { timeZone: config.timezone, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+      await ctx.reply(`🕐 *Hora atual*\n${now.toLocaleTimeString('pt-MZ', opts)}\n📅 ${now.toLocaleDateString('pt-MZ', dateOpts)}\n🌍 ${config.timezone}`);
+    }
+  },
+  {
+    name: 'data',
+    aliases: ['date', 'dia'],
+    category: 'utilidades',
+    description: 'Mostra a data atual',
+    handler: async (ctx) => {
+      const now = new Date();
+      await ctx.reply(`📅 *Data*\n${now.toLocaleDateString('pt-MZ', { timeZone: config.timezone, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`);
+    }
+  },
+  {
+    name: 'calcular',
+    aliases: ['calc', 'calculadora'],
+    category: 'utilidades',
+    description: 'Calcula expressão matemática',
+    usage: '!calcular 2+2*3',
+    handler: async (ctx) => {
+      const expr = ctx.text.replace(/[^0-9+\-*/().%\s]/g, '');
+      if (!expr) return ctx.reply('❌ Use: !calcular 2+2');
+      try {
+        // Avaliação segura básica
+        const result = Function(`"use strict"; return (${expr})`)();
+        if (typeof result !== 'number' || !isFinite(result)) throw new Error('Inválido');
+        await ctx.reply(`🧮 *Resultado*\n\`${expr}\` = *${result}*`);
+      } catch {
+        await ctx.reply('❌ Expressão inválida.');
+      }
+    }
+  },
+  {
+    name: 'porcentagem',
+    aliases: ['porcento', 'percent'],
+    category: 'utilidades',
+    description: 'Calcula porcentagem',
+    usage: '!porcentagem 20 150',
+    handler: async (ctx) => {
+      const [a, b] = ctx.args.map(Number);
+      if (isNaN(a) || isNaN(b)) return ctx.reply('❌ Use: !porcentagem 20 150 (20% de 150)');
+      const res = (a / 100) * b;
+      await ctx.reply(`📊 ${a}% de ${b} = *${res.toFixed(2)}*`);
+    }
+  },
+  {
+    name: 'regra3',
+    aliases: ['regra_de_tres', 'rtres'],
+    category: 'utilidades',
+    description: 'Regra de três simples',
+    usage: '!regra3 2 4 6',
+    handler: async (ctx) => {
+      const [a, b, c] = ctx.args.map(Number);
+      if ([a, b, c].some(isNaN)) return ctx.reply('❌ Use: !regra3 A B C  (A está para B assim como C está para X)');
+      const x = (b * c) / a;
+      await ctx.reply(`📐 *Regra de 3*\n${a} → ${b}\n${c} → *${x.toFixed(2)}*`);
+    }
+  },
+  {
+    name: 'temperatura',
+    aliases: ['temp', 'convertertemp'],
+    category: 'utilidades',
+    description: 'Converte temperatura C/F/K',
+    usage: '!temperatura 30C',
+    handler: async (ctx) => {
+      const input = (ctx.args[0] || '').toUpperCase();
+      const match = input.match(/^([\d.]+)([CFK])$/);
+      if (!match) return ctx.reply('❌ Use: !temperatura 30C ou 86F ou 300K');
+      const val = parseFloat(match[1]);
+      const unit = match[2];
+      let c, f, k;
+      if (unit === 'C') { c = val; f = c * 9/5 + 32; k = c + 273.15; }
+      else if (unit === 'F') { f = val; c = (f - 32) * 5/9; k = c + 273.15; }
+      else { k = val; c = k - 273.15; f = c * 9/5 + 32; }
+      await ctx.reply(`🌡 *Temperatura*\nCelsius: ${c.toFixed(2)}°C\nFahrenheit: ${f.toFixed(2)}°F\nKelvin: ${k.toFixed(2)}K`);
+    }
+  },
+  {
+    name: 'idade',
+    aliases: ['age'],
+    category: 'utilidades',
+    description: 'Calcula idade a partir da data de nascimento',
+    usage: '!idade 15/08/2000',
+    handler: async (ctx) => {
+      const input = ctx.args[0];
+      if (!input) return ctx.reply('❌ Use: !idade DD/MM/AAAA');
+      const parts = input.split(/[\/\-]/);
+      if (parts.length !== 3) return ctx.reply('❌ Formato: DD/MM/AAAA');
+      const [d, m, y] = parts.map(Number);
+      const birth = new Date(y, m - 1, d);
+      if (isNaN(birth.getTime())) return ctx.reply('❌ Data inválida.');
+      const now = new Date();
+      let age = now.getFullYear() - birth.getFullYear();
+      const md = now.getMonth() - birth.getMonth();
+      if (md < 0 || (md === 0 && now.getDate() < birth.getDate())) age--;
+      await ctx.reply(`🎂 Idade: *${age} anos*`);
+    }
+  },
+  {
+    name: 'uuid',
+    aliases: ['guid'],
+    category: 'utilidades',
+    description: 'Gera um UUID',
+    handler: async (ctx) => {
+      await ctx.reply(`🔑 \`${uuidv4()}\``);
+    }
+  },
+  {
+    name: 'senha',
+    aliases: ['password', 'gerarsenha'],
+    category: 'utilidades',
+    description: 'Gera senha aleatória',
+    usage: '!senha 16',
+    handler: async (ctx) => {
+      const len = Math.min(Math.max(parseInt(ctx.args[0]) || 12, 6), 64);
+      const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*';
+      let pass = '';
+      for (let i = 0; i < len; i++) pass += chars[Math.floor(Math.random() * chars.length)];
+      await ctx.reply(`🔐 *Senha gerada (${len}):*\n\`${pass}\``);
+    }
+  },
+  {
+    name: 'base64',
+    aliases: ['b64'],
+    category: 'utilidades',
+    description: 'Codifica texto em Base64',
+    usage: '!base64 texto',
+    handler: async (ctx) => {
+      if (!ctx.text) return ctx.reply('❌ Use: !base64 seu texto');
+      const encoded = Buffer.from(ctx.text).toString('base64');
+      await ctx.reply(`📦 *Base64:*\n\`${encoded}\``);
+    }
+  },
+  {
+    name: 'decode',
+    aliases: ['decodificar', 'b64decode'],
+    category: 'utilidades',
+    description: 'Decodifica Base64',
+    usage: '!decode textobase64',
+    handler: async (ctx) => {
+      if (!ctx.text) return ctx.reply('❌ Use: !decode textobase64');
+      try {
+        const decoded = Buffer.from(ctx.text, 'base64').toString('utf8');
+        await ctx.reply(`📦 *Decodificado:*\n${decoded}`);
+      } catch {
+        await ctx.reply('❌ Base64 inválido.');
+      }
+    }
+  },
+  {
+    name: 'contador',
+    aliases: ['count', 'contar'],
+    category: 'utilidades',
+    description: 'Conta caracteres/palavras',
+    usage: '!contador texto',
+    handler: async (ctx) => {
+      const t = ctx.text || '';
+      if (!t) return ctx.reply('❌ Envie um texto.');
+      const chars = t.length;
+      const words = t.trim().split(/\s+/).filter(Boolean).length;
+      const lines = t.split('\n').length;
+      await ctx.reply(`📊 *Contagem*\nCaracteres: ${chars}\nPalavras: ${words}\nLinhas: ${lines}`);
+    }
+  },
+  {
+    name: 'status',
+    aliases: ['botstatus'],
+    category: 'utilidades',
+    description: 'Status do sistema',
+    handler: async (ctx) => {
+      const freeMem = (os.freemem() / 1024 / 1024).toFixed(0);
+      const totalMem = (os.totalmem() / 1024 / 1024).toFixed(0);
+      const load = os.loadavg()[0].toFixed(2);
+      await ctx.reply(`🖥 *Status do Sistema*\nMemória livre: ${freeMem}MB / ${totalMem}MB\nLoad: ${load}\nPlataforma: ${os.platform()}\nArch: ${os.arch()}`);
+    }
+  }
+];

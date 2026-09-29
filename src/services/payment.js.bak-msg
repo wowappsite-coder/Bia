@@ -1,0 +1,204 @@
+const { getDb } = require('../database');
+const fs = require('fs');
+const path = require('path');
+
+const PENDING_FILE = path.join(__dirname, '../../data/pending_megas.json');
+
+function loadPending() {
+  try {
+    if (!fs.existsSync(PENDING_FILE)) return {};
+    return JSON.parse(fs.readFileSync(PENDING_FILE, 'utf8') || '{}');
+  } catch (_) { return {}; }
+}
+function savePending(data) {
+  try {
+    fs.mkdirSync(path.dirname(PENDING_FILE), { recursive: true });
+    fs.writeFileSync(PENDING_FILE, JSON.stringify(data, null, 2));
+  } catch (e) { console.error('[pending]', e.message); }
+}
+function pendKey(g, s) { return String(g || '') + '|' + String(s || ''); }
+
+function setPendingMegas(groupJid, senderJid, info) {
+  const all = loadPending();
+  all[pendKey(groupJid, senderJid)] = Object.assign({}, info, {
+    senderJid, groupJid, createdAt: Date.now()
+  });
+  savePending(all);
+}
+function getPendingMegas(groupJid, senderJid) {
+  const all = loadPending();
+  const row = all[pendKey(groupJid, senderJid)];
+  if (!row) return null;
+  if (Date.now() - (row.createdAt || 0) > 2 * 60 * 60 * 1000) {
+    delete all[pendKey(groupJid, senderJid)];
+    savePending(all);
+    return null;
+  }
+  return row;
+}
+function clearPendingMegas(groupJid, senderJid) {
+  const all = loadPending();
+  delete all[pendKey(groupJid, senderJid)];
+  savePending(all);
+}
+
+function analyzePayment(paymentData, senderJid) {
+  const database = getDb();
+  const { transactionId, value, fee, destinationNumber, destinationName, provider, date, time, raw } = paymentData;
+
+  if (transactionId) {
+    try {
+      const existing = database.prepare('SELECT * FROM payments WHERE transaction_id = ?').get(transactionId);
+      if (existing) {
+        return { status: 'PAGAMENTO_JA_UTILIZADO', message: '⚠️ Esta transação já foi utilizada.', payment: existing };
+      }
+    } catch (_) {}
+  }
+
+  let order = null;
+  try {
+    const pendingOrders = database.prepare("SELECT * FROM orders WHERE status = 'pending' ORDER BY created_at DESC").all();
+    for (const o of pendingOrders) {
+      let score = 0;
+      if (value && Math.abs(o.value_expected - value) < 0.01) score += 3;
+      if (score >= 3) { order = o; break; }
+    }
+  } catch (_) {}
+
+  let status = 'PAGAMENTO_INVALIDO';
+  let message = '❌ Pagamento não confirmado.';
+  if (value && transactionId) {
+    status = 'PAGAMENTO_VALIDO';
+    message = '✅ Pagamento confirmado com sucesso!';
+  } else if (value) {
+    status = 'PAGAMENTO_SUSPEITO';
+    message = '⚠️ Pagamento em análise.';
+  }
+
+  let paymentRecord = null;
+  try {
+    const insert = database.prepare(`
+      INSERT INTO payments (
+        order_id, transaction_id, provider, value_received, fee,
+        destination_number, destination_name, date, time, raw_message, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const info = insert.run(
+      order ? order.id : null, transactionId || null, provider,
+      value || null, fee || null, destinationNumber || null, destinationName || null,
+      date || null, time || null, raw, status
+    );
+    if (status === 'PAGAMENTO_VALIDO' && order) {
+      try { database.prepare("UPDATE orders SET status = 'paid' WHERE id = ?").run(order.id); } catch (_) {}
+    }
+    paymentRecord = database.prepare('SELECT * FROM payments WHERE id = ?').get(info.lastInsertRowid);
+  } catch (e) {
+    console.error('[analyzePayment]', e.message);
+  }
+  return { status, message, payment: paymentRecord, order };
+}
+
+function formatDetectionReply(paymentData, analysis) {
+  const { provider, transactionId, value, destinationNumber, date, time } = paymentData;
+  const provName = { mpesa: 'M-Pesa', emola: 'E-Mola', mkash: 'M-Kash' }[provider] || (provider || 'Mobile Money');
+
+  if (analysis.status === 'PAGAMENTO_JA_UTILIZADO') {
+    return '⚠️ *TRANSACAO JA UTILIZADA*\n\nEste comprovativo ja foi registado antes.';
+  }
+  if (analysis.status === 'PAGAMENTO_VALIDO') {
+    let text = '💳 *PAGAMENTO APROVADO!* ✅\n\n';
+    if (value != null) text += '💰 Valor: *' + Number(value).toFixed(2) + ' MT*\n';
+    text += '🏦 Operadora: *' + provName + '*\n';
+    if (destinationNumber) text += '📱 Número destino: *' + destinationNumber + '*\n';
+    if (date || time) text += '🕐 Data/Hora: ' + (date || '') + (time ? ' às ' + time : '') + '\n';
+    if (transactionId) text += '🆔 Transação: *' + transactionId + '*\n';
+    text += '\n✅ Pagamento confirmado com sucesso!\n\n';
+    text += '📱 Agora envie o *número* que vai receber os megas.\n';
+    text += '⚠️ O número deve ter *9 dígitos* e começar com *84* ou *85*.\n';
+    text += 'Ex: *852900000*';
+    return text;
+  }
+  let text = '🧾 *Comprovativo (' + provName + ')*\n\n';
+  if (transactionId) text += '🔑 ' + transactionId + '\n';
+  if (value != null) text += '💵 ' + Number(value).toFixed(2) + ' MT\n';
+  text += '\n' + (analysis.message || '');
+  return text;
+}
+
+function extractMegasNumber(text) {
+  if (!text) return null;
+  const digits = String(text).replace(/\D/g, '');
+  // 258 + 9 digitos
+  if (digits.length === 12 && digits.startsWith('258')) {
+    const n = digits.slice(3);
+    if (/^8[45]\d{7}$/.test(n)) return n;
+  }
+  // 9 digitos 84/85
+  if (digits.length === 9 && /^8[45]\d{7}$/.test(digits)) return digits;
+  // mensagem so com o numero e espacos
+  const t = String(text).trim();
+  if (/^(?:\+?258)?[\s\-]*8[45][\s\-]?\d{2}[\s\-]?\d{3}[\s\-]?\d{3}$/.test(t)) {
+    const n = t.replace(/\D/g, '').slice(-9);
+    if (/^8[45]\d{7}$/.test(n)) return n;
+  }
+  return null;
+}
+
+async function handlePendingNumber(sock, msg, sender, jid, text) {
+  const pending = getPendingMegas(jid, sender);
+  if (!pending) return false;
+
+  const num = extractMegasNumber(text);
+  if (!num) {
+    if (/^\s*\+?\d[\d\s\-]{6,}\s*$/.test(String(text || ''))) {
+      await sock.sendMessage(jid, {
+        text: '⚠️ Número inválido.\nPrecisa de *9 dígitos* a começar por *84* ou *85*.\nEx: *852900000*'
+      }, { quoted: msg }).catch(function () {});
+      return true;
+    }
+    return false;
+  }
+
+  clearPendingMegas(jid, sender);
+
+  let adminMentions = [];
+  try {
+    const meta = await sock.groupMetadata(jid);
+    adminMentions = (meta.participants || [])
+      .filter(function (p) { return p.admin === 'admin' || p.admin === 'superadmin'; })
+      .map(function (a) { return a.id; })
+      .filter(Boolean);
+  } catch (_) {}
+
+  const buyerTag = '@' + String(sender).split('@')[0];
+  const admTags = adminMentions.map(function (a) { return '@' + String(a).split('@')[0]; }).join(' ');
+  const valor = pending.value != null ? Number(pending.value).toFixed(2) + ' MT' : '—';
+  const tx = pending.transactionId || '—';
+  const prov = pending.providerName || pending.provider || 'Mobile Money';
+
+  let body = '✅ *COMPRA CONFIRMADA*\n\n';
+  body += '👤 Comprador: ' + buyerTag + '\n';
+  body += '📱 Número para megas: *' + num + '*\n';
+  body += '💰 Valor pago: *' + valor + '*\n';
+  body += '🏦 Operadora: *' + prov + '*\n';
+  body += '🆔 TX: *' + tx + '*\n\n';
+  if (admTags) body += '🛡️ ADMs: ' + admTags + '\n\n';
+  body += '⏳ *Aguarde o ADM para receber os megas.*';
+
+  await sock.sendMessage(jid, {
+    text: body,
+    mentions: [sender].concat(adminMentions)
+  }, { quoted: msg }).catch(function () {});
+
+  return true;
+}
+
+module.exports = {
+  analyzePayment,
+  formatDetectionReply,
+  setPendingMegas,
+  getPendingMegas,
+  clearPendingMegas,
+  handlePendingNumber,
+  extractMegasNumber
+};

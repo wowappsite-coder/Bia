@@ -1,0 +1,244 @@
+/**
+ * pint <pesquisa> — busca imagens publicas (estilo Pinterest)
+ * Sem API Key. Isolado: NAO altera o comando pin nem outros.
+ */
+
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { URL } = require('url');
+
+const MAX_IMAGES = 4;
+const UA =
+  'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+
+function request(urlStr, opts) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(urlStr);
+    const lib = u.protocol === 'https:' ? https : http;
+    const req = lib.request(
+      {
+        hostname: u.hostname,
+        path: u.pathname + u.search,
+        method: (opts && opts.method) || 'GET',
+        headers: Object.assign(
+          {
+            'User-Agent': UA,
+            Accept: 'text/html,application/json,*/*',
+            'Accept-Language': 'en-US,en;q=0.9,pt;q=0.8'
+          },
+          (opts && opts.headers) || {}
+        ),
+        timeout: 25000
+      },
+      (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          const buf = Buffer.concat(chunks);
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            const next = res.headers.location.startsWith('http')
+              ? res.headers.location
+              : u.protocol + '//' + u.hostname + res.headers.location;
+            return request(next, opts).then(resolve, reject);
+          }
+          resolve({ status: res.statusCode, buf, text: buf.toString('utf8'), headers: res.headers });
+        });
+      }
+    );
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Timeout'));
+    });
+    req.end();
+  });
+}
+
+async function ddgImageSearch(query) {
+  const q = encodeURIComponent(query);
+  // 1) pagina para obter vqd
+  const page = await request('https://duckduckgo.com/?q=' + q + '&iax=images&ia=images');
+  let vqd = null;
+  const m1 = page.text.match(/vqd=["']([^"']+)["']/);
+  const m2 = page.text.match(/vqd=([0-9-]+)/);
+  if (m1) vqd = m1[1];
+  else if (m2) vqd = m2[1];
+  if (!vqd) throw new Error('Nao foi possivel iniciar a pesquisa de imagens');
+
+  const api =
+    'https://duckduckgo.com/i.js?l=wt-wt&o=json&q=' +
+    q +
+    '&vqd=' +
+    encodeURIComponent(vqd) +
+    '&f=,,,,,&p=1';
+  const res = await request(api, {
+    headers: {
+      Referer: 'https://duckduckgo.com/',
+      Accept: 'application/json'
+    }
+  });
+  let data;
+  try {
+    data = JSON.parse(res.text);
+  } catch (_) {
+    throw new Error('Resposta invalida da pesquisa');
+  }
+  const results = data.results || [];
+  const urls = [];
+  for (const r of results) {
+    const u = r.image || r.thumbnail || r.url;
+    if (u && /^https?:\/\//i.test(u) && !urls.includes(u)) urls.push(u);
+    if (urls.length >= MAX_IMAGES * 2) break;
+  }
+  return urls;
+}
+
+async function pinterestFallback(query) {
+  // tentativa leve na pagina publica (pode falhar se o site bloquear)
+  const q = encodeURIComponent(query);
+  const url = 'https://www.pinterest.com/search/pins/?q=' + q + '&rs=typed';
+  try {
+    const res = await request(url, {
+      headers: {
+        Referer: 'https://www.pinterest.com/',
+        Accept: 'text/html'
+      }
+    });
+    const urls = [];
+    const re = /https:\/\/i\.pinimg\.com\/[^"'\s]+?\.(?:jpg|jpeg|png|webp)/gi;
+    let m;
+    while ((m = re.exec(res.text)) && urls.length < MAX_IMAGES * 2) {
+      let u = m[0].replace(/\\u002F/g, '/').split('?')[0];
+      // preferir originais maiores
+      u = u.replace(/\/\d+x\//, '/736x/');
+      if (!urls.includes(u)) urls.push(u);
+    }
+    return urls;
+  } catch (_) {
+    return [];
+  }
+}
+
+async function downloadImage(url) {
+  const res = await request(url, {
+    headers: { Referer: 'https://www.pinterest.com/', Accept: 'image/*' }
+  });
+  if (res.status < 200 || res.status >= 300 || !res.buf.length) {
+    throw new Error('download fail');
+  }
+  // evitar HTML de bloqueio
+  const ct = String((res.headers && res.headers['content-type']) || '');
+  if (ct.includes('text/html')) throw new Error('not image');
+  if (res.buf.length < 2000) throw new Error('too small');
+  return res.buf;
+}
+
+module.exports = [
+  {
+    name: 'pint',
+    aliases: ['pinterest', 'pintimg', 'imgpin'],
+    category: 'utilidades',
+    description: 'Pesquisa imagens publicas (estilo Pinterest)',
+    usage: 'pint <pesquisa>',
+    handler: async (ctx) => {
+      const query = (ctx.args || []).join(' ').trim();
+      if (!query) {
+        return ctx.reply(
+          '📌 *PINT*\n\n' +
+            'Uso: *pint* <pesquisa>\n' +
+            'Ex: *pint Dean Winchester*\n\n' +
+            '_Nao usa API Key. Comando separado do *pin*._'
+        );
+      }
+
+      let tmpFiles = [];
+      try {
+        await ctx.reply('🔎 A procurar imagens de: *' + query + '* ...').catch(() => {});
+
+        let urls = [];
+        // 1) Pinterest scrape (se funcionar)
+        try {
+          urls = await pinterestFallback(query);
+        } catch (_) {}
+
+        // 2) DuckDuckGo imagens (publico, sem key)
+        if (urls.length < 2) {
+          try {
+            const ddg = await ddgImageSearch(query);
+            urls = urls.concat(ddg);
+          } catch (e) {
+            console.error('[pint] ddg', e.message);
+          }
+        }
+
+        // unique
+        urls = urls.filter((u, i, a) => a.indexOf(u) === i);
+
+        if (!urls.length) {
+          return ctx.reply(
+            '❌ Nao encontrei imagens para: *' + query + '*\nTenta outro termo.'
+          );
+        }
+
+        const sock = ctx.sock || ctx.client || ctx.conn;
+        const jid = ctx.chatId || ctx.from || (ctx.msg && ctx.msg.key && ctx.msg.key.remoteJid);
+        if (!sock || !jid) return ctx.reply('❌ Sem conexao WhatsApp.');
+
+        let sent = 0;
+        for (const u of urls) {
+          if (sent >= MAX_IMAGES) break;
+          let tmp = null;
+          try {
+            const buf = await downloadImage(u);
+            tmp = path.join(os.tmpdir(), 'beatriz_pint_' + Date.now() + '_' + sent + '.jpg');
+            fs.writeFileSync(tmp, buf);
+            tmpFiles.push(tmp);
+            await sock.sendMessage(
+              jid,
+              {
+                image: buf,
+                caption: sent === 0 ? '📌 *' + query + '*' : undefined
+              },
+              { quoted: ctx.msg }
+            );
+            sent++;
+            await new Promise((r) => setTimeout(r, 700));
+          } catch (e) {
+            console.error('[pint] img', e.message);
+          } finally {
+            try {
+              if (tmp && fs.existsSync(tmp)) fs.unlinkSync(tmp);
+            } catch (_) {}
+          }
+        }
+
+        // limpar restos
+        for (const f of tmpFiles) {
+          try {
+            if (fs.existsSync(f)) fs.unlinkSync(f);
+          } catch (_) {}
+        }
+
+        if (!sent) {
+          return ctx.reply(
+            '❌ Encontrei links, mas nao consegui baixar as imagens.\nTenta de novo mais tarde.'
+          );
+        }
+      } catch (e) {
+        console.error('[pint]', e);
+        for (const f of tmpFiles) {
+          try {
+            if (fs.existsSync(f)) fs.unlinkSync(f);
+          } catch (_) {}
+        }
+        await ctx.reply(
+          '❌ Erro na pesquisa de imagens.\n' +
+            (e && e.message ? e.message.slice(0, 150) : '')
+        );
+      }
+    }
+  }
+];

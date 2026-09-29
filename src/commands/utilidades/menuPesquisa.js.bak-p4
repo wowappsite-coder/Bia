@@ -1,0 +1,251 @@
+'use strict';
+const engine = require('../../services/search/engine');
+const { allCatalog, enabledByType } = require('../../services/search/sourceRegistry');
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const rate = new Map(); // key -> timestamps
+function allow(user, kind, max, windowMs) {
+  const k = kind + '|' + user;
+  const now = Date.now();
+  let arr = rate.get(k) || [];
+  arr = arr.filter((t) => now - t < windowMs);
+  if (arr.length >= max) {
+    rate.set(k, arr);
+    return false;
+  }
+  arr.push(now);
+  rate.set(k, arr);
+  return true;
+}
+
+function boxPesquisa(consulta, resumo, fonte, link) {
+  return (
+    '╭──〔 🔎 PESQUISA 〕──╮\n' +
+    '│\n' +
+    '│ 🔍 *Consulta:*\n' +
+    '│ ' + String(consulta).slice(0, 120) + '\n' +
+    '│\n' +
+    '│ 📖 *Resultado:*\n' +
+    '│ ' + String(resumo || '—').slice(0, 800).replace(/\n/g, '\n│ ') + '\n' +
+    '│\n' +
+    '│ 🌐 *Fonte:* ' + (fonte || '—') + '\n' +
+    (link ? ('│ 🔗 ' + link + '\n') : '') +
+    '│\n' +
+    '╰────────────────────╯'
+  );
+}
+
+function menuText() {
+  const web = enabledByType('web').map((s) => s.name).join(', ') || '—';
+  const img = enabledByType('image').map((s) => s.name).join(', ') || '—';
+  const vid = enabledByType('video').map((s) => s.name).join(', ') || '—';
+  const ai = enabledByType('ai').map((s) => s.name).join(', ') || '—';
+  const total = allCatalog().length;
+  const on = allCatalog().filter((s) => s.enabled).length;
+  return (
+    '╭──〔 📚 MENU PESQUISA 〕──╮\n' +
+    '│\n' +
+    '│ 🔎 *pesquisa* <texto>\n' +
+    '│ 🖼️ *imagem* <texto>\n' +
+    '│ 🎬 *video* <texto>\n' +
+    '│ 🤖 *bia* / *ia* <texto>\n' +
+    '│\n' +
+    '│ 📂 *Categorias*\n' +
+    '│ 🌐 Web / Enciclopedia\n' +
+    '│ 🖼️ Imagens\n' +
+    '│ 🎬 Videos\n' +
+    '│ 🔬 Ciencia (arXiv)\n' +
+    '│ 💻 Docs (MDN, npm)\n' +
+    '│ 🤖 IA (Beatriz/Groq)\n' +
+    '│\n' +
+    '│ ✅ Ativas: ' + on + '/' + total + '\n' +
+    '│ Web: ' + web + '\n' +
+    '│ Img: ' + img + '\n' +
+    '│ Vid: ' + vid + '\n' +
+    '│ IA: ' + ai + '\n' +
+    '│\n' +
+    '│ ⚠️ Fontes sem API publica\n' +
+    '│ ficam desativadas no catalogo.\n' +
+    '│\n' +
+    '╰────────────────────────╯'
+  );
+}
+
+function downloadToTemp(url) {
+  return new Promise((resolve, reject) => {
+    try {
+      const u = new URL(url);
+      const lib = u.protocol === 'http:' ? http : https;
+      const tmp = path.join(os.tmpdir(), 'bz_img_' + Date.now() + path.extname(u.pathname || '.jpg') || '.jpg');
+      const file = fs.createWriteStream(tmp);
+      const req = lib.get(url, {
+        headers: { 'User-Agent': 'BeatrizBot/1.0' },
+        timeout: 20000
+      }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          file.close();
+          try { fs.unlinkSync(tmp); } catch (e) {}
+          return downloadToTemp(res.headers.location).then(resolve, reject);
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          file.close();
+          return reject(new Error('HTTP ' + res.statusCode));
+        }
+        let size = 0;
+        const MAX = 8 * 1024 * 1024;
+        res.on('data', (c) => {
+          size += c.length;
+          if (size > MAX) {
+            try { req.destroy(); } catch (e) {}
+            try { file.close(); fs.unlinkSync(tmp); } catch (e2) {}
+            reject(new Error('arquivo grande'));
+          }
+        });
+        res.pipe(file);
+        file.on('finish', () => file.close(() => resolve(tmp)));
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { try { req.destroy(); } catch (e) {} reject(new Error('timeout')); });
+    } catch (e) { reject(e); }
+  });
+}
+
+const cmds = [
+  {
+    name: 'menupesquisa',
+    aliases: ['menupesq', 'pesquisamenu', 'menubusca'],
+    category: 'utilidades',
+    description: 'Menu Pesquisa',
+    async handler(ctx) {
+      return ctx.reply(menuText());
+    }
+  },
+  {
+    name: 'pesquisa',
+    aliases: ['buscar', 'search', 'pesq'],
+    category: 'utilidades',
+    description: 'Pesquisa web / encyclopedia',
+    async handler(ctx) {
+      const q = (ctx.args || []).join(' ').trim();
+      if (!q) return ctx.reply('Ex: *pesquisa o que e inteligencia artificial*');
+      const uid = String(ctx.sender || ctx.from || 'x');
+      if (!allow(uid, 'pesq', 5, 5 * 60 * 1000)) {
+        return ctx.reply('⏳ Limite: 5 pesquisas / 5 min. Tenta mais tarde.');
+      }
+      try { await ctx.reply('🔎 A pesquisar...'); } catch (e) {}
+      const r = await engine.searchWeb(q);
+      if (!r) return ctx.reply('❌ Nao foi possivel encontrar resultado neste momento.');
+      return ctx.reply(boxPesquisa(q, r.summary, r.source, r.url));
+    }
+  },
+  {
+    name: 'imagem',
+    aliases: ['imgsearch', 'fotos', 'imagens'],
+    category: 'utilidades',
+    description: 'Pesquisa imagens (Openverse/Wikimedia)',
+    async handler(ctx) {
+      const q = (ctx.args || []).join(' ').trim();
+      if (!q) return ctx.reply('Ex: *imagem gato preto*');
+      const uid = String(ctx.sender || ctx.from || 'x');
+      if (!allow(uid, 'img', 3, 5 * 60 * 1000)) {
+        return ctx.reply('⏳ Limite: 3 imagens / 5 min.');
+      }
+      try { await ctx.reply('🖼️ A procurar imagem...'); } catch (e) {}
+      const r = await engine.searchImage(q);
+      if (!r || !r.imageUrl) return ctx.reply('❌ Nenhuma imagem encontrada.');
+      let tmp = null;
+      try {
+        tmp = await downloadToTemp(r.imageUrl);
+        const caption =
+          '🖼️ *IMAGEM ENCONTRADA*\n' +
+          '🔎 Consulta: ' + q + '\n' +
+          '🌐 Fonte: ' + r.source +
+          (r.license ? ('\n📜 Licenca: ' + r.license) : '') +
+          (r.pageUrl ? ('\n🔗 ' + r.pageUrl) : '');
+        if (typeof ctx.sendImage === 'function') {
+          await ctx.sendImage(tmp, caption);
+        } else if (ctx.sock && ctx.jid) {
+          await ctx.sock.sendMessage(ctx.jid, {
+            image: { url: tmp },
+            caption
+          });
+        } else {
+          await ctx.reply(caption + '\n' + r.imageUrl);
+        }
+      } catch (e) {
+        return ctx.reply('❌ Falha ao baixar imagem.\n🔗 ' + (r.imageUrl || ''));
+      } finally {
+        if (tmp) try { fs.unlinkSync(tmp); } catch (e) {}
+      }
+    }
+  },
+  {
+    name: 'video',
+    aliases: ['videos', 'vidsearch'],
+    category: 'utilidades',
+    description: 'Pesquisa videos (Openverse)',
+    async handler(ctx) {
+      const q = (ctx.args || []).join(' ').trim();
+      if (!q) return ctx.reply('Ex: *video natureza*');
+      const uid = String(ctx.sender || ctx.from || 'x');
+      if (!allow(uid, 'vid', 3, 5 * 60 * 1000)) {
+        return ctx.reply('⏳ Limite: 3 videos / 5 min.');
+      }
+      try { await ctx.reply('🎬 A procurar video...'); } catch (e) {}
+      const r = await engine.searchVideo(q);
+      if (!r) return ctx.reply('❌ Nenhum video encontrado nas fontes ativas.');
+      return ctx.reply(
+        '╭──〔 🎬 VIDEO 〕──╮\n' +
+        '│ 🔎 ' + q + '\n' +
+        '│ 🎬 ' + (r.title || '').slice(0, 80) + '\n' +
+        '│ 🌐 ' + r.source + '\n' +
+        (r.pageUrl ? ('│ 🔗 ' + r.pageUrl + '\n') : '') +
+        (r.videoUrl ? ('│ ▶️ ' + r.videoUrl + '\n') : '') +
+        '╰────────────────╯'
+      );
+    }
+  },
+  {
+    name: 'fontespesquisa',
+    aliases: ['catalogopesquisa', 'listfontes'],
+    category: 'utilidades',
+    description: 'Lista catalogo de fontes',
+    async handler(ctx) {
+      const all = allCatalog();
+      const on = all.filter((s) => s.enabled);
+      const off = all.filter((s) => !s.enabled);
+      let t = '📚 *CATALOGO PESQUISA*\n\n✅ *Ativas (' + on.length + ')*\n';
+      on.forEach((s) => { t += '• ' + s.name + ' (' + s.type + ')\n'; });
+      t += '\n⏸️ *Desativadas (' + off.length + ')* — sem API publica/segura\n';
+      off.slice(0, 25).forEach((s) => { t += '• ' + s.name + '\n'; });
+      if (off.length > 25) t += '… +' + (off.length - 25) + ' no catalogo\n';
+      return ctx.reply(t);
+    }
+  }
+];
+
+// Stubs IA — nao burlam; apontam para bia se existir
+const aiNames = ['chatgpt', 'gemini', 'deepseek', 'claude', 'copilot', 'perplexity', 'grok', 'mistral'];
+for (const n of aiNames) {
+  cmds.push({
+    name: n,
+    aliases: [],
+    category: 'utilidades',
+    description: 'IA ' + n + ' (stub)',
+    async handler(ctx) {
+      const q = (ctx.args || []).join(' ').trim();
+      return ctx.reply(
+        '⚠️ *' + n + '* nao esta disponivel com API automatica neste bot.\n' +
+        'Usa *bia ' + (q || 'sua pergunta') + '* ou *ia ' + (q || 'sua pergunta') + '* (Groq/Beatriz).'
+      );
+    }
+  });
+}
+
+module.exports = cmds;

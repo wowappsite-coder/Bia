@@ -1,0 +1,283 @@
+const { execFile } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
+
+const MAX_BYTES = 50 * 1024 * 1024;
+const MAX_MB = 50;
+
+function tmpDir() {
+  const d = path.join(os.tmpdir(), 'beatriz_yt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8));
+  fs.mkdirSync(d, { recursive: true });
+  return d;
+}
+
+function isYoutubeUrl(text) {
+  return text && /(?:youtube\.com|youtu\.be|youtube-nocookie\.com)/i.test(text);
+}
+
+function extractUrl(text) {
+  if (!text) return null;
+  const m = String(text).match(/https?:\/\/[^\s<>"']+/i);
+  if (!m) return null;
+  return m[0].replace(/[)\].,;]+$/, '');
+}
+
+function safeName(title, ext) {
+  let n = String(title || 'youtube')
+    .replace(/[\/\\?%*:|"<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+  if (!n) n = 'youtube';
+  if (!ext) ext = 'mp3';
+  if (!n.toLowerCase().endsWith('.' + ext.toLowerCase())) n += '.' + ext;
+  return n;
+}
+
+function formatDuration(sec) {
+  sec = parseInt(sec, 10);
+  if (!sec || sec < 0 || isNaN(sec)) return null;
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return h + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function formatViews(v) {
+  const n = parseInt(v, 10);
+  if (!n || isNaN(n)) return null;
+  if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return String(n);
+}
+
+async function whichYtdlp() {
+  const candidates = ['yt-dlp', 'yt-dlp_linux', path.join(process.env.HOME || '', '.local/bin/yt-dlp')];
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      await execFileAsync(candidates[i], ['--version'], { timeout: 8000 });
+      return candidates[i];
+    } catch (_) {}
+  }
+  return null;
+}
+
+function findOutputFile(dir) {
+  const files = fs.readdirSync(dir).map(function (f) { return path.join(dir, f); });
+  const media = files.filter(function (f) {
+    return /\.(mp4|m4a|mp3|webm|mkv|opus|ogg)$/i.test(f);
+  });
+  if (!media.length) return null;
+  media.sort(function (a, b) { return fs.statSync(b).size - fs.statSync(a).size; });
+  return media[0];
+}
+
+function cleanup(dir) {
+  try {
+    if (!dir || !fs.existsSync(dir)) return;
+    fs.readdirSync(dir).forEach(function (f) {
+      try { fs.unlinkSync(path.join(dir, f)); } catch (_) {}
+    });
+    fs.rmdirSync(dir);
+  } catch (_) {}
+}
+
+async function fetchMeta(bin, url) {
+  try {
+    const { stdout } = await execFileAsync(bin, [
+      '--no-playlist',
+      '--print', '%(title)s||%(duration)s||%(uploader)s||%(view_count)s',
+      '--skip-download',
+      url
+    ], { timeout: 45000, maxBuffer: 1024 * 1024 });
+    const line = String(stdout || '').trim().split('\n')[0] || '';
+    const parts = line.split('||');
+    return {
+      title: (parts[0] && parts[0] !== 'NA') ? parts[0].trim() : null,
+      duration: formatDuration(parts[1]),
+      channel: (parts[2] && parts[2] !== 'NA') ? parts[2].trim() : null,
+      views: formatViews(parts[3])
+    };
+  } catch (_) {
+    return { title: null, duration: null, channel: null, views: null };
+  }
+}
+
+async function download(url, mode) {
+  const bin = await whichYtdlp();
+  if (!bin) {
+    return { ok: false, error: 'yt-dlp nao encontrado.\nNo Termux: pip install -U yt-dlp' };
+  }
+
+  const meta = await fetchMeta(bin, url);
+  const title = meta.title;
+  const dir = tmpDir();
+  const outTpl = path.join(dir, 'media.%(ext)s');
+
+  const args = [
+    '--no-playlist',
+    '--no-warnings',
+    '-o', outTpl,
+    '--max-filesize', MAX_MB + 'M'
+  ];
+
+  if (mode === 'audio') {
+    args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0', '-f', 'bestaudio/best');
+  } else {
+    args.push('-f', 'bv*[filesize<50M]+ba/b[filesize<50M]/b', '--merge-output-format', 'mp4');
+  }
+  args.push(url);
+
+  try {
+    await execFileAsync(bin, args, {
+      timeout: 180000,
+      maxBuffer: 8 * 1024 * 1024,
+      env: process.env
+    });
+  } catch (e) {
+    const msg = (e.stderr || e.message || '').toString();
+    cleanup(dir);
+    if (/max.filesize|File is larger|too large/i.test(msg)) {
+      return { ok: false, error: 'Arquivo maior que ' + MAX_MB + 'MB.' };
+    }
+    if (/Private|unavailable|not available|Sign in/i.test(msg)) {
+      return { ok: false, error: 'Video indisponivel ou privado.' };
+    }
+    return { ok: false, error: 'Falha no download.\n' + msg.slice(0, 180) };
+  }
+
+  const file = findOutputFile(dir);
+  if (!file || !fs.existsSync(file)) {
+    cleanup(dir);
+    return { ok: false, error: 'Download falhou (sem ficheiro).' };
+  }
+
+  const size = fs.statSync(file).size;
+  if (size > MAX_BYTES) {
+    cleanup(dir);
+    return { ok: false, error: 'Arquivo final > ' + MAX_MB + 'MB.' };
+  }
+  if (size < 1000) {
+    cleanup(dir);
+    return { ok: false, error: 'Arquivo vazio.' };
+  }
+
+  const ext = path.extname(file).replace('.', '') || (mode === 'audio' ? 'mp3' : 'mp4');
+  const fileName = safeName(title || path.basename(file, path.extname(file)), ext);
+  const buf = fs.readFileSync(file);
+  cleanup(dir);
+
+  return {
+    ok: true,
+    buffer: buf,
+    size: size,
+    ext: ext,
+    fileName: fileName,
+    title: title || fileName,
+    duration: meta.duration,
+    channel: meta.channel,
+    views: meta.views
+  };
+}
+
+function getInputUrl(ctx) {
+  const fromArgs = (ctx.args || []).join(' ').trim();
+  let url = extractUrl(fromArgs) || extractUrl(ctx.text || '') || extractUrl(ctx.parsed && ctx.parsed.body);
+  if (url && isYoutubeUrl(url)) return url;
+  try {
+    const q = ctx.quoted;
+    if (q) {
+      const qt =
+        q.conversation ||
+        (q.extendedTextMessage && q.extendedTextMessage.text) ||
+        (q.imageMessage && q.imageMessage.caption) ||
+        '';
+      url = extractUrl(qt);
+      if (url && isYoutubeUrl(url)) return url;
+    }
+  } catch (_) {}
+  return null;
+}
+
+function donePanel(mode, result, sizeMb) {
+  const head = mode === 'audio' ? '🎧 𝐀́𝐔𝐃𝐈𝐎' : '🎬 𝐕𝐈́𝐃𝐄𝐎';
+  let t = '╭──〔 ' + head + ' 〕──╮\n';
+  t += '◈┃ 🎵 ' + (result.title || 'YouTube') + '\n';
+  if (result.duration) t += '◈┃ ⏱️ ' + result.duration + '\n';
+  if (result.channel) t += '◈┃ 📺 ' + result.channel + '\n';
+  if (result.views) t += '◈┃ 👀 ' + result.views + ' views\n';
+  t += '◈┃ 📦 ' + sizeMb + ' MB\n';
+  t += '╰──────────────────╯';
+  return t;
+}
+
+async function runDownload(ctx, mode) {
+  const url = getInputUrl(ctx);
+  if (!url) {
+    return ctx.reply(
+      '╭──〔 ▶️ YOUTUBE 〕──╮\n' +
+        '◈┃ *yt <link>* — video\n' +
+        '◈┃ *yta <link>* — audio\n' +
+        '╰──────────────────╯\n' +
+        '> Limite: *' + MAX_MB + 'MB*'
+    );
+  }
+
+  await ctx.reply(mode === 'audio' ? '🎧 A baixar audio...' : '🎬 A baixar video...');
+
+  const result = await download(url, mode);
+  if (!result.ok) return ctx.reply('❌ ' + result.error);
+
+  const sizeMb = (result.size / (1024 * 1024)).toFixed(1);
+
+  try {
+    if (mode === 'audio') {
+      await ctx.sock.sendMessage(
+        ctx.jid,
+        {
+          audio: result.buffer,
+          mimetype: 'audio/mpeg',
+          fileName: result.fileName,
+          ptt: false
+        },
+        { quoted: ctx.msg }
+      );
+    } else {
+      await ctx.sock.sendMessage(
+        ctx.jid,
+        {
+          video: result.buffer,
+          mimetype: 'video/mp4',
+          fileName: result.fileName,
+          caption: donePanel('video', result, sizeMb)
+        },
+        { quoted: ctx.msg }
+      );
+      return;
+    }
+    await ctx.reply(donePanel(mode, result, sizeMb));
+  } catch (e) {
+    await ctx.reply('❌ Erro ao enviar: ' + String(e.message || e).slice(0, 120));
+  }
+}
+
+module.exports = [
+  {
+    name: 'yt',
+    aliases: ['ytv', 'ytvideo', 'youtube'],
+    category: 'utilidades',
+    description: 'Baixa video do YouTube (max 50MB)',
+    handler: async (ctx) => runDownload(ctx, 'video')
+  },
+  {
+    name: 'yta',
+    aliases: ['ytaudio', 'mp3yt'],
+    category: 'utilidades',
+    description: 'Baixa audio do YouTube (max 50MB)',
+    handler: async (ctx) => runDownload(ctx, 'audio')
+  }
+];

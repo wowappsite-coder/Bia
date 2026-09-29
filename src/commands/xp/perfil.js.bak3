@@ -1,0 +1,125 @@
+const db = require('../../database');
+let mentionUtil = null;
+try { mentionUtil = require('../../utils/mention'); } catch (_) {}
+
+module.exports = [
+  {
+    name: 'perfil',
+    aliases: ['meuperfil', 'verperfil'],
+    category: 'xp',
+    description: 'Perfil com foto, menção e atividade',
+    handler: async (ctx) => {
+      try {
+        let target = ctx.sender;
+        try {
+          if (typeof ctx.getMentionedOrQuoted === 'function') {
+            const t = ctx.getMentionedOrQuoted();
+            if (t) target = t;
+          } else if (ctx.mentioned && ctx.mentioned[0]) {
+            target = ctx.mentioned[0];
+          } else {
+            const ci = ctx.msg && ctx.msg.message && ctx.msg.message.extendedTextMessage && ctx.msg.message.extendedTextMessage.contextInfo;
+            if (ci && ci.mentionedJid && ci.mentionedJid[0]) target = ci.mentionedJid[0];
+            else if (ci && ci.participant) target = ci.participant;
+          }
+        } catch (_) {}
+
+        // JID real do grupo (para o WhatsApp mostrar o nome)
+        let mentionJid = target;
+        if (ctx.isGroup && mentionUtil && typeof mentionUtil.resolveInGroup === 'function') {
+          try {
+            mentionJid = await mentionUtil.resolveInGroup(ctx.sock, ctx.jid, target) || target;
+          } catch (_) {}
+        }
+
+        const groupJid = ctx.isGroup ? ctx.jid : 'global';
+        const u = db.getUser(target, groupJid);
+        const isSelf = String(target) === String(ctx.sender) || String(mentionJid) === String(ctx.sender);
+
+        // Token de menção (@id) — o WhatsApp troca pelo nome
+        let tagToken = '@' + String(mentionJid).split('@')[0];
+        if (mentionUtil && typeof mentionUtil.token === 'function') {
+          try { tagToken = mentionUtil.token(mentionJid) || tagToken; } catch (_) {}
+        } else if (mentionUtil && typeof mentionUtil.tag === 'function') {
+          try { tagToken = mentionUtil.tag(mentionJid) || tagToken; } catch (_) {}
+        }
+
+        // Nome legivel (fallback se menção falhar)
+        let displayName = u.pushname || u.name || null;
+        if (!displayName && ctx.isGroup) {
+          try {
+            const meta = await ctx.sock.groupMetadata(ctx.jid);
+            const parts = meta.participants || [];
+            const found = parts.find(function (p) {
+              const id = p.id || p.jid;
+              return id === mentionJid || id === target ||
+                String(id).split('@')[0] === String(mentionJid).split('@')[0];
+            });
+            if (found && found.name) displayName = found.name;
+          } catch (_) {}
+        }
+        if (!displayName) displayName = tagToken;
+
+        const xp = u.xp || 0;
+        const level = u.level || 1;
+        const msgs = u.messages || 0;
+        const stickers = u.msg_stickers || 0;
+        const images = u.msg_images || 0;
+        const audios = u.msg_audios || 0;
+        const videos = u.msg_videos || 0;
+        const progress = Math.min(100, Math.floor((xp % 100)));
+
+        const caption =
+          '╭──〔 👤 PERFIL 〕──╮\n' +
+          '> ' + (isSelf ? 'Teu perfil' : ('Perfil de ' + tagToken)) + '\n' +
+          '❀────────────────❀\n' +
+          '╭──〔 ⭐ XP 〕──╮\n' +
+          '◈┃ Nome: ' + tagToken + '\n' +
+          '◈┃ XP: *' + xp + '*\n' +
+          '◈┃ Nivel: *' + level + '*\n' +
+          '◈┃ Progresso: *' + progress + '%*\n' +
+          '╰──────────────────╯\n' +
+          '╭──〔 💬 ATIVIDADE 〕──╮\n' +
+          '◈┃ Mensagens: *' + msgs + '*\n' +
+          '◈┃ Figurinhas: *' + stickers + '*\n' +
+          '◈┃ Imagens: *' + images + '*\n' +
+          '◈┃ Audios: *' + audios + '*\n' +
+          '◈┃ Videos: *' + videos + '*\n' +
+          '╰──────────────────╯\n' +
+          '❀────────────────❀';
+
+        let ppUrl = null;
+        try {
+          ppUrl = await ctx.sock.profilePictureUrl(mentionJid, 'image');
+        } catch (_) {
+          try {
+            ppUrl = await ctx.sock.profilePictureUrl(target, 'image');
+          } catch (_) {
+            try {
+              ppUrl = await ctx.sock.profilePictureUrl(String(target).replace('@lid', '@s.whatsapp.net'), 'image');
+            } catch (_) {}
+          }
+        }
+
+        const payload = {
+          caption: caption,
+          mentions: [mentionJid],
+          contextInfo: { mentionedJid: [mentionJid] }
+        };
+
+        if (ppUrl) {
+          await ctx.sock.sendMessage(ctx.jid, Object.assign({
+            image: { url: ppUrl }
+          }, payload), { quoted: ctx.msg });
+        } else {
+          await ctx.sock.sendMessage(ctx.jid, Object.assign({
+            text: caption + '\n> (Sem foto de perfil)'
+          }, payload), { quoted: ctx.msg });
+        }
+      } catch (e) {
+        console.error('[perfil]', e && e.message);
+        await ctx.reply('Erro ao carregar perfil.');
+      }
+    }
+  }
+];

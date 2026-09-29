@@ -1,0 +1,120 @@
+/**
+ * MODO ISEKAI — Parte 1/10 (stubs)
+ * Não mexe no RPG família
+ */
+const isekaiDb = require('../../isekai/db');
+
+module.exports = [
+  {
+    name: 'iskmenu',
+    category: 'isekai',
+    description: 'Menu do Modo Isekai',
+    handler: async (ctx) => {
+      await ctx.reply(
+        '╭──〔 🌍 *MODO ISEKAI* 〕──╮\n' +
+          '◈┃ iskmenu\n' +
+          '◈┃ iskiniciar <nome>\n' +
+          '◈┃ iskstatus\n' +
+          '◈┃ iskmodo / iskmodo_off\n' +
+          '╰──────────────────╯\n' +
+          '> 📌 Parte 1/10 — estrutura\n' +
+          '> Sem *isk* = RPG antigo (menu, loja, status…)'
+      );
+    }
+  },
+  {
+    name: 'iskiniciar',
+    category: 'isekai',
+    description: 'Cria personagem Isekai (stub)',
+    usage: 'iskiniciar Nome',
+    handler: async (ctx) => {
+      const nome = (ctx.text || '').trim() || ((ctx.args && ctx.args.join(' ')) || '').trim();
+      if (!nome || nome.length < 2) {
+        return ctx.reply('❌ Use: *iskiniciar SeuNome*\nEx: *iskiniciar Duarte*');
+      }
+      if (nome.length > 24) return ctx.reply('❌ Nome máx. 24 caracteres.');
+      const g = isekaiDb.scopeGroup(ctx);
+      try {
+        const r = isekaiDb.createPlayerStub(ctx.sender, g, nome);
+        if (!r.ok) {
+          return ctx.reply(
+            '⚠️ Já tens personagem Isekai.\nNome: *' +
+              (r.row && r.row.name) +
+              '*\nUsa *iskstatus*.'
+          );
+        }
+        await ctx.reply(
+          '✨ *Personagem criado (stub)*\n\n' +
+            '👤 Nome: *' + nome + '*\n' +
+            '📦 Guardado no banco Isekai (isolado).\n\n' +
+            '_Raça/classe/sorte = Parte 2._\n*iskstatus*'
+        );
+      } catch (e) {
+        console.error('[isekai]', e.message);
+        await ctx.reply('❌ Erro: ' + (e.message || e));
+      }
+    }
+  },
+  {
+    name: 'iskstatus',
+    aliases: ['iskperfil'],
+    category: 'isekai',
+    description: 'Status Isekai (stub)',
+    handler: async (ctx) => {
+      const g = isekaiDb.scopeGroup(ctx);
+      try {
+        const row = isekaiDb.getPlayer(ctx.sender, g);
+        if (!row) {
+          return ctx.reply('❌ Sem personagem.\n*iskiniciar SeuNome*');
+        }
+        await ctx.reply(
+          '╭──〔 👤 *ISEKAI STATUS* 〕──╮\n' +
+            '◈┃ Nome: *' + (row.name || '?') + '*\n' +
+            '◈┃ Fase: 1/10\n' +
+            '◈┃ ID: ' + row.id + '\n' +
+            '╰──────────────────╯\n' +
+            '_Atributos na Parte 2._'
+        );
+      } catch (e) {
+        await ctx.reply('❌ Erro ao ler status.');
+      }
+    }
+  },
+  {
+    name: 'iskmodo',
+    category: 'isekai',
+    description: 'Ativa Isekai no grupo',
+    groupOnly: true,
+    ownerOnly: true,
+    handler: async (ctx) => {
+      try {
+        if (typeof ctx.isOwner === 'function' && !ctx.isOwner()) {
+          return ctx.reply('❌ Só o dono.');
+        }
+      } catch (_) {}
+      isekaiDb.setIsekaiEnabled(ctx.jid, true);
+      await ctx.reply(
+        '🌍 *Modo Isekai ATIVADO* neste grupo.\n' +
+          '*iskmenu* · *iskiniciar* · *iskstatus*\n' +
+          'Off: *iskmodo_off*'
+      );
+    }
+  },
+  {
+    name: 'iskmodo_off',
+    aliases: ['iskmodooff'],
+    category: 'isekai',
+    description: 'Desativa Isekai no grupo',
+    groupOnly: true,
+    ownerOnly: true,
+    handler: async (ctx) => {
+      try {
+        if (typeof ctx.isOwner === 'function' && !ctx.isOwner()) {
+          return ctx.reply('❌ Só o dono.');
+        }
+      } catch (_) {}
+      isekaiDb.setIsekaiEnabled(ctx.jid, false);
+      await ctx.reply('⚪ *Modo Isekai DESATIVADO*.');
+    }
+  }
+];

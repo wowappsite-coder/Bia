@@ -1,0 +1,152 @@
+/**
+ * Geração de menus a partir do registry real
+ */
+
+const registry = require('../commands/registry');
+const config = require('../config');
+
+const CATEGORY_META = {
+  dono: { emoji: '👑', title: 'MENU DONO' },
+  admin: { emoji: '🛡️', title: 'MENU ADM' },
+  grupo: { emoji: '👥', title: 'MENU GRUPO' },
+  internet: { emoji: '🌐', title: 'MENU INTERNET' },
+  bn: { emoji: '🎮', title: 'MENU BN' },
+  diversao: { emoji: '🎭', title: 'MENU DIVERSÃO' },
+  stickers: { emoji: '🎴', title: 'MENU STICKERS' },
+  imagem: { emoji: '🖼️', title: 'MENU IMAGEM' },
+  seguranca: { emoji: '🛡️', title: 'MENU SEGURANÇA' },
+  utilidades: { emoji: '🧰', title: 'MENU UTILIDADES' },
+  rpg: { emoji: '❤️', title: 'MENU RPG/FAMÍLIA' },
+  xp: { emoji: '⭐', title: 'MENU XP/RANK' },
+  economia: { emoji: '💰', title: 'MENU ECONOMIA' },
+  aluguel: { emoji: '🏠', title: 'MENU ALUGUEL' },
+  custom: { emoji: '✨', title: 'CUSTOM' },
+  outros: { emoji: '📦', title: 'OUTROS' }
+};
+
+function generateMainMenu() {
+  const stats = registry.stats();
+  let text = `┏━━━━━━━━━━━━━━━━━━┓
+┃ 🤖 *${config.botName}*
+┣━━━━━━━━━━━━━━━━━━┫
+┃ 📦 MENU PRINCIPAL
+┣━━━━━━━━━━━━━━━━━━┫
+┃
+┃ 👑 Menu Dono
+┃ 🛡️ Menu ADM
+┃ 👥 Menu Grupo
+┃ 🌐 Menu Internet
+┃ 🎮 Menu BN
+┃ 🎭 Menu Diversão
+┃ 🎴 Menu Stickers
+┃ 🖼️ Menu Imagem
+┃ 🛡️ Segurança
+┃ 🧰 Utilidades
+┃ ❤️ RPG/Família
+┃ ⭐ XP/RANK
+┃ 💰 Economia
+┃ 🏠 Aluguel
+┃
+┣━━━━━━━━━━━━━━━━━━┫
+┃ 📊 ${stats.totalMain} comandos
+┃ 🔗 Prefixo: ${config.prefixes[0]} (ou sem prefixo)
+┗━━━━━━━━━━━━━━━━━━┛
+
+Digite o nome do menu para ver os comandos.
+Ex: *menu adm* | *menu bn* | *menu economia*`;
+
+  return text;
+}
+
+function generateCategoryMenu(category) {
+  const meta = CATEGORY_META[category] || { emoji: '📦', title: category.toUpperCase() };
+  const cmds = registry.getByCategory(category);
+
+  if (!cmds.length) {
+    return `❌ Nenhum comando na categoria *${meta.title}*`;
+  }
+
+  let text = `┏━━━━━━━━━━━━━━━━━━┓
+┃ ${meta.emoji} *${meta.title}*
+┣━━━━━━━━━━━━━━━━━━┫
+┃
+`;
+
+  // Agrupa visualmente
+  const sorted = cmds.sort((a, b) => a.name.localeCompare(b.name));
+  for (const cmd of sorted) {
+    const aliasStr = cmd.aliases.length ? ` (${cmd.aliases.slice(0, 2).join(', ')})` : '';
+    text += `┃ ${config.prefixes[0]}${cmd.name}${aliasStr}\n`;
+  }
+
+  text += `┃
+┣━━━━━━━━━━━━━━━━━━┫
+┃ Total: ${cmds.length} comandos
+┗━━━━━━━━━━━━━━━━━━┛`;
+
+  return text;
+}
+
+// Comandos de submenu
+function registerMenuCommands() {
+  const cats = Object.keys(CATEGORY_META);
+  for (const cat of cats) {
+    if (cat === 'custom' || cat === 'outros') continue;
+    registry.register({
+      name: `menu${cat}`,
+      aliases: [`menu ${cat}`, `menú${cat}`],
+      category: 'utilidades',
+      description: `Abre o menu ${cat}`,
+      handler: async (ctx) => {
+        await ctx.reply(generateCategoryMenu(cat));
+      }
+    });
+  }
+
+  // Atalhos comuns
+  const shortcuts = {
+    'menuadm': 'admin',
+    'menuadmin': 'admin',
+    'menubn': 'bn',
+    'menudono': 'dono',
+    'menugrupo': 'grupo',
+    'menuinternet': 'internet',
+    'menusticker': 'stickers',
+    'menustickers': 'stickers',
+    'menuimg': 'imagem',
+    'menuimagem': 'imagem',
+    'menuseguranca': 'seguranca',
+    'menurpg': 'rpg',
+    'menufamilia': 'rpg',
+    'menuxp': 'xp',
+    'menurank': 'xp',
+    'menueconomia': 'economia',
+    'menualuguel': 'aluguel',
+    'menudiversao': 'diversao',
+    'menuutilidades': 'utilidades',
+    'menutil': 'utilidades',
+    'menusticker': 'stickers',
+    'menufig': 'stickers',
+    'menufigurinhas': 'stickers'
+  };
+
+  for (const [name, cat] of Object.entries(shortcuts)) {
+    if (!registry.get(name)) {
+      registry.register({
+        name,
+        category: 'utilidades',
+        description: `Atalho menu ${cat}`,
+        handler: async (ctx) => {
+          await ctx.reply(generateCategoryMenu(cat));
+        }
+      });
+    }
+  }
+}
+
+module.exports = {
+  generateMainMenu,
+  generateCategoryMenu,
+  registerMenuCommands,
+  CATEGORY_META
+};

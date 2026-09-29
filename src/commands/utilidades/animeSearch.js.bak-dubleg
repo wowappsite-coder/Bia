@@ -1,0 +1,1299 @@
+/**
+ * Categoria Anime — pesquisa, Dub/Leg, lista EP, download com qualidade
+ * Fontes modulares em SOURCES (facil acrescentar).
+ */
+const fs = require('fs');
+const dq = require('../../services/downloadQueue');
+const path = require('path');
+const https = require('https');
+const http = require('http');
+const { execFile } = require('child_process');
+
+const UA =
+  'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+
+const SESSION_DIR = path.join(__dirname, '../../../data/anime-sessions');
+const TMP_DIR = path.join(__dirname, '../../../data/anime-tmp');
+try { fs.mkdirSync(SESSION_DIR, { recursive: true }); } catch (_) {}
+try { fs.mkdirSync(TMP_DIR, { recursive: true }); } catch (_) {}
+
+const SOURCES = [
+  {
+    name: 'MeusAnimes',
+    base: 'https://meusanimes.blog',
+    searchUrl: (q) => 'https://meusanimes.blog/?s=' + encodeURIComponent(q)
+  },
+  {
+    name: 'Goyabu',
+    base: 'https://goyabu.io',
+    searchUrl: (q) => 'https://goyabu.io/?s=' + encodeURIComponent(q)
+  },
+  {
+    name: 'AnimesDigital',
+    base: 'https://animesdigital.org',
+    searchUrl: (q) => 'https://animesdigital.org/?s=' + encodeURIComponent(q)
+  },
+  {
+    name: 'AniTube',
+    base: 'https://www.anitube.zip',
+    searchUrl: (q) => 'https://www.anitube.zip/?s=' + encodeURIComponent(q)
+  }
+];
+
+
+/** Abreviaturas comuns → nome de pesquisa */
+const ANIME_ALIASES = {
+  jjk: 'Jujutsu Kaisen',
+  jujutsu: 'Jujutsu Kaisen',
+  'jujutsu kaisen': 'Jujutsu Kaisen',
+  op: 'One Piece',
+  'one piece': 'One Piece',
+  naruto: 'Naruto',
+  boruto: 'Boruto',
+  aot: 'Attack on Titan',
+  snk: 'Shingeki no Kyojin',
+  'attack on titan': 'Attack on Titan',
+  mha: 'Boku no Hero Academia',
+  bnha: 'Boku no Hero Academia',
+  'my hero': 'Boku no Hero Academia',
+  hxh: 'Hunter x Hunter',
+  hxh2: 'Hunter x Hunter',
+  ds: 'Demon Slayer',
+  kny: 'Kimetsu no Yaiba',
+  'demon slayer': 'Kimetsu no Yaiba',
+  bc: 'Black Clover',
+  'black clover': 'Black Clover',
+  bluelock: 'Blue Lock',
+  'blue lock': 'Blue Lock',
+  csm: 'Chainsaw Man',
+  chainsaw: 'Chainsaw Man',
+  solo: 'Solo Leveling',
+  'solo leveling': 'Solo Leveling',
+  fma: 'Fullmetal Alchemist',
+  fmab: 'Fullmetal Alchemist Brotherhood',
+  sao: 'Sword Art Online',
+  ngnl: 'No Game No Life',
+  rezero: 'Re Zero',
+  're zero': 'Re Zero',
+  tot: 'Tower of God',
+  kaiju: 'Kaiju No 8',
+  'kaiju no 8': 'Kaiju No 8',
+  'kaijuu': 'Kaiju No 8',
+  deathnote: 'Death Note',
+  dn: 'Death Note',
+  tokyo: 'Tokyo Ghoul',
+  tg: 'Tokyo Ghoul',
+  bleach: 'Bleach',
+  opm: 'One Punch Man',
+  'one punch': 'One Punch Man',
+  mob: 'Mob Psycho 100',
+  vinland: 'Vinland Saga',
+  spy: 'Spy x Family',
+  'spy x family': 'Spy x Family',
+  drstone: 'Dr Stone',
+  steins: 'Steins Gate',
+  nge: 'Neon Genesis Evangelion',
+  eva: 'Evangelion',
+  dbz: 'Dragon Ball Z',
+  dbs: 'Dragon Ball Super',
+  db: 'Dragon Ball',
+  fairy: 'Fairy Tail',
+  narto: 'Naruto',
+  bclak: 'Black Clover',
+  blak: 'Black Clover'
+};
+
+function expandQuery(q) {
+  const raw = String(q || '').trim();
+  const key = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const out = [];
+  const seen = {};
+  function add(x) {
+    const t = String(x || '').trim();
+    if (!t) return;
+    const k = t.toLowerCase();
+    if (seen[k]) return;
+    seen[k] = true;
+    out.push(t);
+  }
+  add(raw);
+  if (ANIME_ALIASES[key]) add(ANIME_ALIASES[key]);
+  // tenta sem espacos
+  const nospace = key.replace(/\s+/g, '');
+  if (ANIME_ALIASES[nospace]) add(ANIME_ALIASES[nospace]);
+  // primeira palavra
+  const first = key.split(/\s+/)[0];
+  if (first && ANIME_ALIASES[first]) add(ANIME_ALIASES[first]);
+  return out;
+}
+
+function sessionKey(ctx) {
+  const u = String(ctx.sender || '').split('@')[0];
+  const g = ctx.isGroup ? String(ctx.jid) : 'pv';
+  return g + '__' + u;
+}
+function loadSession(ctx) {
+  const f = path.join(SESSION_DIR, sessionKey(ctx).replace(/[^\w.@-]/g, '_') + '.json');
+  try {
+    if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, 'utf8'));
+  } catch (_) {}
+  return null;
+}
+function saveSession(ctx, data) {
+  const f = path.join(SESSION_DIR, sessionKey(ctx).replace(/[^\w.@-]/g, '_') + '.json');
+  data.updatedAt = Date.now();
+  fs.writeFileSync(f, JSON.stringify(data, null, 0));
+}
+function clearSession(ctx) {
+  const f = path.join(SESSION_DIR, sessionKey(ctx).replace(/[^\w.@-]/g, '_') + '.json');
+  try { fs.unlinkSync(f); } catch (_) {}
+}
+
+function httpGet(url, timeoutMs) {
+  return new Promise(function (resolve, reject) {
+    let u;
+    try { u = new URL(url); } catch (e) { return reject(e); }
+    const lib = u.protocol === 'http:' ? http : https;
+    const req = lib.get(
+      {
+        hostname: u.hostname,
+        path: u.pathname + u.search,
+        protocol: u.protocol,
+        headers: {
+          'User-Agent': UA,
+          Accept: 'text/html,application/xhtml+xml',
+          'Accept-Language': 'pt-BR,pt;q=0.9'
+        },
+        timeout: timeoutMs || 15000
+      },
+      function (res) {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          const next = res.headers.location.startsWith('http')
+            ? res.headers.location
+            : u.protocol + '//' + u.hostname + res.headers.location;
+          res.resume();
+          return httpGet(next, timeoutMs).then(resolve, reject);
+        }
+        const chunks = [];
+        res.on('data', function (c) {
+          chunks.push(c);
+          if (Buffer.concat(chunks).length > 1200000) req.destroy();
+        });
+        res.on('end', function () {
+          resolve({ status: res.statusCode || 0, body: Buffer.concat(chunks).toString('utf8') });
+        });
+      }
+    );
+    req.on('error', reject);
+    req.on('timeout', function () { req.destroy(); reject(new Error('timeout')); });
+  });
+}
+
+function httpDownload(url, dest, timeoutMs) {
+  return new Promise(function (resolve, reject) {
+    let u;
+    try { u = new URL(url); } catch (e) { return reject(e); }
+    const lib = u.protocol === 'http:' ? http : https;
+    const file = fs.createWriteStream(dest);
+    const req = lib.get(
+      {
+        hostname: u.hostname,
+        path: u.pathname + u.search,
+        protocol: u.protocol,
+        headers: { 'User-Agent': UA, Referer: u.origin + '/' },
+        timeout: timeoutMs || 120000
+      },
+      function (res) {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          file.close();
+          try { fs.unlinkSync(dest); } catch (_) {}
+          const next = res.headers.location.startsWith('http')
+            ? res.headers.location
+            : u.protocol + '//' + u.hostname + res.headers.location;
+          res.resume();
+          return httpDownload(next, dest, timeoutMs).then(resolve, reject);
+        }
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          file.close();
+          try { fs.unlinkSync(dest); } catch (_) {}
+          return reject(new Error('HTTP ' + res.statusCode));
+        }
+        res.pipe(file);
+        file.on('finish', function () {
+          file.close(function () { resolve(dest); });
+        });
+      }
+    );
+    req.on('error', function (e) {
+      try { file.close(); fs.unlinkSync(dest); } catch (_) {}
+      reject(e);
+    });
+    req.on('timeout', function () {
+      req.destroy();
+      try { file.close(); fs.unlinkSync(dest); } catch (_) {}
+      reject(new Error('timeout download'));
+    });
+  });
+}
+
+function stripTags(html) {
+  return String(html || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function absUrl(base, href) {
+  if (!href) return '';
+  if (/^https?:\/\//i.test(href)) return href.split('#')[0];
+  if (href.startsWith('//')) return 'https:' + href.split('#')[0];
+  try { return new URL(href, base).href.split('#')[0]; } catch (_) { return ''; }
+}
+
+function detectDub(text) {
+  const t = String(text || '').toLowerCase();
+  if (/dublad|dub\b|pt-br/.test(t)) return 'dub';
+  if (/legendad|\bleg\b|subtit/.test(t)) return 'leg';
+  return '';
+}
+
+function parseSearch(html, source, query, loose) {
+  const out = [];
+  const seen = {};
+  const qNorm = String(query).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const qWords = qNorm.split(/\s+/).filter(function (w) { return w.length > 1; });
+  const re = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html)) && out.length < (loose ? 25 : 12)) {
+    const href = m[1];
+    if (!href || href.startsWith('#') || /javascript:/i.test(href)) continue;
+    if (/\/(tag|categoria|category|author|wp-|page|login|contato)\//i.test(href)) continue;
+    const link = absUrl(source.base, href);
+    if (!link || seen[link]) continue;
+    try {
+      const host = new URL(source.base).hostname.replace(/^www\./, '');
+      const lh = new URL(link).hostname.replace(/^www\./, '');
+      if (lh.indexOf(host.split('.').slice(-2).join('.')) < 0) continue;
+      if (new URL(link).pathname === '/') continue;
+    } catch (_) { continue; }
+    const title = stripTags(m[2]).slice(0, 100);
+    if (!title || title.length < 3) continue;
+    const tNorm = title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    let hit = 0;
+    for (let i = 0; i < qWords.length; i++) {
+      if (tNorm.indexOf(qWords[i]) >= 0) hit++;
+    }
+    // modo estrito: precisa de alguma palavra
+    // modo loose: titulo comeca com query OU 1 palavra OU similaridade simples
+    if (!loose) {
+      if (qWords.length && hit === 0) continue;
+    } else {
+      const starts = tNorm.indexOf(qNorm) === 0 || tNorm.split(/\s+/)[0].indexOf(qWords[0] || '') === 0;
+      const partial = hit > 0 || tNorm.indexOf(qNorm.slice(0, Math.min(5, qNorm.length))) >= 0;
+      if (!starts && !partial) continue;
+    }
+    seen[link] = true;
+    const kind = detectDub(title);
+    out.push({ title: title, link: link, source: source.name, kind: kind, score: hit });
+  }
+  out.sort(function (a, b) { return (b.score || 0) - (a.score || 0); });
+  return out.slice(0, loose ? 15 : 5);
+}
+
+
+async function searchAll(query) {
+  async function run(q, loose) {
+    const bags = await Promise.all(
+      SOURCES.map(async function (src) {
+        try {
+          const res = await httpGet(src.searchUrl(q), 12000);
+          if (!res || res.status >= 400 || !res.body) return [];
+          return parseSearch(res.body, src, q, !!loose);
+        } catch (e) {
+          console.error('[anime]', src.name, e.message);
+          return [];
+        }
+      })
+    );
+    const seen = {};
+    const all = [];
+    for (let bi = 0; bi < bags.length; bi++) {
+      const list = bags[bi] || [];
+      for (let i = 0; i < list.length; i++) {
+        const r = list[i];
+        const k = (r.link || r.title).toLowerCase();
+        if (seen[k]) continue;
+        seen[k] = true;
+        all.push(r);
+      }
+    }
+    return all;
+  }
+
+  const variants = expandQuery(query);
+  console.log('[anime] search variants:', variants.join(' | '));
+
+  // 1) exact-ish com cada variante (primeiro jjk → Jujutsu Kaisen)
+  for (let v = 0; v < variants.length; v++) {
+    const exact = await run(variants[v], false);
+    if (exact.length) return { exact: exact, similar: [], used: variants[v] };
+  }
+
+  // 2) loose com cada variante
+  let similar = [];
+  const seen = {};
+  for (let v = 0; v < variants.length; v++) {
+    const more = await run(variants[v], true);
+    for (const r of more) {
+      const k = (r.link || r.title).toLowerCase();
+      if (seen[k]) continue;
+      seen[k] = true;
+      similar.push(r);
+    }
+  }
+
+  // 3) se ainda vazio, tenta palavras grandes da expansao (ex: Jujutsu, Kaisen)
+  if (!similar.length) {
+    for (let v = 0; v < variants.length; v++) {
+      const parts = String(variants[v]).split(/\s+/).filter(function (w) { return w.length >= 4; });
+      for (let pi = 0; pi < parts.length; pi++) {
+        const more = await run(parts[pi], true);
+        for (const r of more) {
+          const k = (r.link || r.title).toLowerCase();
+          if (seen[k]) continue;
+          seen[k] = true;
+          similar.push(r);
+        }
+      }
+    }
+  }
+
+  similar = similar.slice(0, 12);
+  return { exact: [], similar: similar, used: variants[0] };
+}
+
+
+
+/** Extrai lista de episodios da pagina do anime */
+function parseEpisodes(html, base) {
+  const eps = [];
+  const seen = {};
+  const re = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html)) && eps.length < 500) {
+    const title = stripTags(m[2]);
+    const link = absUrl(base, m[1]);
+    if (!link || seen[link]) continue;
+    const epMatch =
+      title.match(/(?:epis[oó]dio|ep\.?)\s*(\d{1,4})/i) ||
+      link.match(/(?:episodio|episode|ep)[_-]?(\d{1,4})/i);
+    if (!epMatch) continue;
+    const num = parseInt(epMatch[1], 10);
+    if (!num || num > 5000) continue;
+    seen[link] = true;
+    eps.push({
+      num,
+      title: title.slice(0, 80) || ('Episodio ' + num),
+      link,
+      kind: detectDub(title + ' ' + link)
+    });
+  }
+  eps.sort((a, b) => a.num - b.num);
+  // unique by num (first wins)
+  const byNum = {};
+  const uniq = [];
+  for (const e of eps) {
+    if (byNum[e.num]) continue;
+    byNum[e.num] = true;
+    uniq.push(e);
+  }
+  return uniq;
+}
+
+async function loadEpisodes(animeUrl, sourceName) {
+  const src = SOURCES.find((s) => s.name === sourceName) || { base: animeUrl };
+  const res = await httpGet(animeUrl, 15000);
+  if (!res || !res.body) return [];
+  return parseEpisodes(res.body, src.base || animeUrl);
+}
+
+/** Qualidades a partir de pagina do EP / players comuns */
+function parseQualities(html) {
+  const found = [];
+  const body = String(html || '');
+  const pairs = [
+    { id: '360p', re: /\b360p\b/i },
+    { id: '480p', re: /\b480p\b|\b460p\b/i },
+    { id: '720p', re: /\b720p\b/i },
+    { id: '1080p', re: /\b1080p\b|\bHD\b/i }
+  ];
+  // links de video diretos
+  const videoRe = /https?:\/\/[^\s"'<>]+?\.(?:mp4|m3u8)(?:\?[^\s"'<>]*)?/gi;
+  const videos = body.match(videoRe) || [];
+  const labelRe = /(?:label|quality|res|tamanho)["'\s:=]+([0-9]{3,4}p|HD)/gi;
+  let lm;
+  const labels = [];
+  while ((lm = labelRe.exec(body))) labels.push(lm[1]);
+
+  for (const p of pairs) {
+    const hasLabel = p.re.test(body) || labels.some((x) => p.re.test(x));
+    let url = '';
+    for (const v of videos) {
+      if (p.re.test(v)) {
+        url = v;
+        break;
+      }
+    }
+    if (!url && hasLabel && videos.length) {
+      // associa por ordem aproximada
+      url = '';
+    }
+    if (hasLabel || url) {
+      found.push({ id: p.id, label: p.id === '1080p' ? 'HD / 1080p' : p.id, url: url || '' });
+    }
+  }
+  // se so ha links sem label, oferece generico
+  if (!found.length && videos.length) {
+    found.push({ id: 'default', label: 'Disponivel', url: videos[0] });
+  }
+  // dedupe
+  const seen = {};
+  return found.filter((q) => {
+    if (seen[q.id]) return false;
+    seen[q.id] = true;
+    return true;
+  });
+}
+
+function zipFiles(files, zipPath) {
+  return new Promise(function (resolve, reject) {
+    // usa zip do sistema se existir
+    const args = ['-j', '-q', zipPath].concat(files);
+    execFile('zip', args, { timeout: 180000 }, function (err) {
+      if (err) return reject(err);
+      resolve(zipPath);
+    });
+  });
+}
+
+
+function ytdlpBin() {
+  const cands = [
+    path.join(process.env.HOME || '', '.local/bin/yt-dlp'),
+    '/data/data/com.termux/files/usr/bin/yt-dlp',
+    'yt-dlp'
+  ];
+  for (const c of cands) {
+    try { if (c === 'yt-dlp' || fs.existsSync(c)) return c; } catch (_) {}
+  }
+  return 'yt-dlp';
+}
+
+function runYtdlp(args, timeoutMs) {
+  return new Promise(function (resolve, reject) {
+    execFile(ytdlpBin(), args, { timeout: timeoutMs || 300000, maxBuffer: 20 * 1024 * 1024 }, function (err, stdout, stderr) {
+      if (err) {
+        err.stderr = stderr;
+        return reject(err);
+      }
+      resolve(String(stdout || ''));
+    });
+  });
+}
+
+/** Lista formatos aproximados A1-A4 */
+async function listQualityOptions(pageUrl) {
+  const defaults = [
+    { id: 'A1', label: 'A1 — 360p', format: 'best[height<=360]/best' },
+    { id: 'A2', label: 'A2 — 480p', format: 'best[height<=480]/best' },
+    { id: 'A3', label: 'A3 — 720p', format: 'best[height<=720]/best' },
+    { id: 'A4', label: 'A4 — HD/melhor', format: 'best' }
+  ];
+  try {
+    const out = await runYtdlp(['-F', '--no-warnings', pageUrl], 60000);
+    const has360 = /360/.test(out);
+    const has480 = /480/.test(out);
+    const has720 = /720/.test(out);
+    const has1080 = /1080/.test(out);
+    const opts = [];
+    if (has360 || true) opts.push(defaults[0]);
+    if (has480 || true) opts.push(defaults[1]);
+    if (has720 || true) opts.push(defaults[2]);
+    if (has1080 || true) opts.push(defaults[3]);
+    return opts.length ? opts : defaults;
+  } catch (_) {
+    return defaults;
+  }
+}
+
+async function downloadWithYtdlp(pageUrl, format, destPattern) {
+  const args = [
+    '--no-warnings',
+    '-f', format || 'best',
+    '-o', destPattern,
+    '--merge-output-format', 'mp4',
+    '--no-playlist',
+    pageUrl
+  ];
+  await runYtdlp(args, 300000);
+}
+
+
+function detectSeason(text, link) {
+  const t = String(text || '') + ' ' + String(link || '');
+  let m = t.match(/\b(?:temporada|season|part|parte)\s*(\d{1,2})\b/i);
+  if (m) return parseInt(m[1], 10);
+  m = t.match(/\b(?:s|t)(\d{1,2})\b/i);
+  if (m) return parseInt(m[1], 10);
+  m = t.match(/\b2nd\s*season\b|\b3rd\s*season\b|\b(\d)(st|nd|rd|th)\s*season\b/i);
+  if (m) {
+    if (/2nd/i.test(t)) return 2;
+    if (/3rd/i.test(t)) return 3;
+    if (m[1]) return parseInt(m[1], 10);
+  }
+  return 1;
+}
+
+function groupBySeason(results) {
+  const map = {};
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const season = detectSeason(r.title, r.link);
+    if (!map[season]) map[season] = [];
+    map[season].push(r);
+  }
+  const seasons = Object.keys(map).map(Number).sort(function (a, b) { return a - b; });
+  return { seasons: seasons, map: map };
+}
+
+
+function scoreAnimeTitle(title, query) {
+  const t = String(title || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const q = String(query || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  let score = 0;
+  if (t.indexOf(q) >= 0) score += 5;
+  // penaliza spin-off / filme / ova
+  if (/filme|movie|ova|ona|special|especial|mahou|tei no ken|recap|resumo/.test(t)) score -= 3;
+  if (/dublado|legendado/.test(t)) score += 0;
+  // titulo curto e proximo da query = serie principal
+  const core = t.replace(/\b(dublado|legendado|tv|hd)\b/g, '').trim();
+  if (core === q || core === q + ' tv') score += 4;
+  if (core.indexOf(q) === 0 && core.length < q.length + 12) score += 2;
+  return score;
+}
+
+function pickBestAnime(results, query) {
+  if (!results || !results.length) return null;
+  let best = results[0];
+  let bestS = scoreAnimeTitle(best.title, query);
+  for (let i = 1; i < results.length; i++) {
+    const sc = scoreAnimeTitle(results[i].title, query);
+    if (sc > bestS) { bestS = sc; best = results[i]; }
+  }
+  return best;
+}
+
+function uniqueTitles(results, limit) {
+  const seen = {};
+  const out = [];
+  for (let i = 0; i < results.length && out.length < (limit || 8); i++) {
+    const t = String(results[i].title || '').trim();
+    const k = t.toLowerCase().replace(/\s+/g, ' ');
+    if (!t || seen[k]) continue;
+    seen[k] = true;
+    out.push(results[i]);
+  }
+  return out;
+}
+
+function pickPrimaryForSeason(list) {
+  if (!list || !list.length) return null;
+  // prefere pagina "principal" sem episodio no titulo
+  const noEp = list.filter(function (r) {
+    return !/(?:epis[oó]dio|ep\.?\s*\d+)/i.test(r.title);
+  });
+  return (noEp[0] || list[0]);
+}
+
+function boxAnime(lines) {
+  let t = '╭━━━〔 🎌 ANIME 〕━━━╮\n';
+  for (let i = 0; i < lines.length; i++) t += '┃ ' + lines[i] + '\n';
+  t += '╰━━━━━━━━━━━━━━━━━━╯';
+  return t;
+}
+
+async function cmdSearch(ctx, query) {
+  const pack = await searchAll(query);
+  const results = pack.exact || [];
+  const similar = pack.similar || [];
+
+  if (!results.length) {
+    if (similar.length) {
+      const lines = [
+        '❌ Nao achei *exacto*: ' + query,
+        '',
+        '🔍 *Parecidos:*',
+        '_Copia o nome e pesquisa de novo:_'
+      ];
+      for (let i = 0; i < similar.length; i++) {
+        lines.push('> ' + similar[i].title);
+      }
+      lines.push('');
+      lines.push('Ex: *anime ' + similar[0].title.slice(0, 40) + '*');
+      return ctx.reply(boxAnime(lines));
+    }
+    return ctx.reply(boxAnime(['❌ Nenhum resultado para:', '*' + query + '*', '', 'Tenta outro nome.']));
+  }
+
+  // escolhe melhor match (serie principal quando possivel)
+  const primary = pickBestAnime(results, query) || results[0];
+  const alts = uniqueTitles(results, 8);
+
+  const grouped = groupBySeason(results);
+  const seasons = grouped.seasons.length ? grouped.seasons : [1];
+
+  function altBlock() {
+    if (alts.length <= 1) return [];
+    const lines = ['', '📋 *Outros encontrados:*'];
+    for (let i = 0; i < alts.length; i++) {
+      const mark = alts[i].link === primary.link ? ' ✅' : '';
+      lines.push('> ' + alts[i].title + mark);
+    }
+    lines.push('_Copia o nome e usa: *anime <nome>*_');
+    return lines;
+  }
+
+  // 1 temporada → D1/L2
+  if (seasons.length <= 1) {
+    const anime = primary;
+    let hasDub = results.some(function (r) { return r.kind === 'dub'; });
+    let hasLeg = results.some(function (r) { return r.kind === 'leg'; });
+    if (!hasDub && !hasLeg) { hasDub = true; hasLeg = true; }
+
+    saveSession(ctx, {
+      step: 'choose_lang',
+      query: query,
+      anime: anime,
+      all: results.slice(0, 12),
+      hasDub: hasDub,
+      hasLeg: hasLeg,
+      season: seasons[0] || 1,
+      seasons: seasons,
+      seasonMap: null,
+      episodes: [],
+      mode: null,
+      epPage: 0
+    });
+
+    return ctx.reply(boxAnime([
+      '✅ *Anime encontrado*',
+      '🎬 *' + anime.title + '*',
+      '🌐 Fonte: ' + anime.source,
+      '📺 Temporada: *' + (seasons[0] || 1) + '*',
+      '',
+      hasDub ? '*D1* — Dublado ✅' : '*D1* — Dublado ❌',
+      hasLeg ? '*L2* — Legendado ✅' : '*L2* — Legendado ❌',
+      '',
+      'Digite: *D1* ou *L2*'
+    ].concat(altBlock())));
+  }
+
+  // varias temporadas
+  saveSession(ctx, {
+    step: 'choose_season',
+    query: query,
+    anime: primary,
+    all: results.slice(0, 15),
+    seasons: seasons,
+    seasonMap: grouped.map,
+    hasDub: true,
+    hasLeg: true,
+    episodes: [],
+    mode: null,
+    epPage: 0
+  });
+
+  const lines = [
+    '✅ *Anime encontrado*',
+    '🎬 *' + primary.title + '*',
+    '🌐 Fonte: ' + primary.source,
+    '📺 Temporadas: *' + seasons.length + '*',
+    '',
+    '*Escolhe a temporada:*'
+  ];
+  for (let i = 0; i < seasons.length; i++) {
+    const sn = seasons[i];
+    const n = (grouped.map[sn] || []).length;
+    lines.push('*T' + sn + '* — Temporada ' + sn + (n ? ' (' + n + ' links)' : ''));
+  }
+  lines.push('');
+  lines.push('Ex: *T1*  |  *T2*');
+  return ctx.reply(boxAnime(lines.concat(altBlock())));
+}
+
+
+
+
+function formatEpPage(s, page) {
+  const eps = s.episodes || [];
+  const pageSize = 30;
+  const total = eps.length;
+  const start = page * pageSize;
+  const slice = eps.slice(start, start + pageSize);
+  const end = start + slice.length;
+  const mode = s.mode === 'dub' ? 'Dublado' : (s.mode === 'leg' ? 'Legendado' : '');
+  const seasonLabel = s.season ? ('T' + s.season) : '';
+
+  let list = '';
+  for (let i = 0; i < slice.length; i++) {
+    list += '┃ EP ' + slice[i].num + ' — ' + slice[i].link + '\n';
+  }
+
+  let t =
+    '╭━━━〔 🎌 ANIME 〕━━━╮\n' +
+    '┃ 🎬 *' + ((s.anime && s.anime.title) || 'Anime') + '*\n' +
+    (mode ? ('┃ 🎙️ ' + mode + '\n') : '') +
+    '┃ 📺 EPs: *' + total + '*  |  a mostrar *' + (start + 1) + '-' + end + '*\n' +
+    '┃\n' +
+    list +
+    '┃\n';
+
+  if (end < total) {
+    t += '┃ 💡 Mais episodios: *maiseps*\n';
+    t += '┃ (proxima: ' + (end + 1) + '-' + Math.min(end + pageSize, total) + ')\n┃\n';
+  } else {
+    t += '┃ ✅ Lista completa\n┃\n';
+  }
+
+  t +=
+    '┃ ⬇️ *Download:*\n' +
+    '┃ *dwdanimeep 1*\n' +
+    '┃ *dwdanimeep 1-5*\n' +
+    '┃ ou *dwdanimeep* + link\n' +
+    '╰━━━━━━━━━━━━━━━━━━╯';
+  return t;
+}
+
+async function cmdSeason(ctx, num) {
+  const s = loadSession(ctx);
+  if (!s || s.step !== 'choose_season') {
+    return ctx.reply(boxAnime(['Sem temporadas pendentes.', 'Usa *anime <nome>*']));
+  }
+  const sn = parseInt(num, 10);
+  if (!sn || (s.seasons && s.seasons.indexOf(sn) < 0)) {
+    return ctx.reply(boxAnime(['Temporada invalida.', 'Usa *T1*, *T2*, ...']));
+  }
+  const list = (s.seasonMap && s.seasonMap[sn]) || s.all || [];
+  const anime = pickPrimaryForSeason(list) || s.anime;
+  let hasDub = list.some(function (r) { return r.kind === 'dub'; });
+  let hasLeg = list.some(function (r) { return r.kind === 'leg'; });
+  if (!hasDub && !hasLeg) { hasDub = true; hasLeg = true; }
+
+  s.step = 'choose_lang';
+  s.season = sn;
+  s.anime = anime;
+  s.hasDub = hasDub;
+  s.hasLeg = hasLeg;
+  saveSession(ctx, s);
+
+  return ctx.reply(boxAnime([
+    '✅ *Temporada ' + sn + '*',
+    '🎬 *' + (anime.title || '') + '*',
+    '🌐 ' + (anime.source || ''),
+    '',
+    hasDub ? '*D1* — Dublado ✅' : '*D1* — Dublado ❌',
+    hasLeg ? '*L2* — Legendado ✅' : '*L2* — Legendado ❌',
+    '',
+    'Digite: *D1* ou *L2*'
+  ]));
+}
+
+async function cmdLang(ctx, mode) {
+  const s = loadSession(ctx);
+  if (!s || s.step !== 'choose_lang') {
+    return ctx.reply(boxAnime(['Usa primeiro:', '*anime <nome>*', 'Depois temporada (se houver)', 'Depois *D1* ou *L2*']));
+  }
+  if (mode === 'dub' && s.hasDub === false) {
+    return ctx.reply(boxAnime(['❌ Dublado indisponivel.', 'Tenta *leg*.']));
+  }
+  if (mode === 'leg' && s.hasLeg === false) {
+    return ctx.reply(boxAnime(['❌ Legendado indisponivel.', 'Tenta *dub*.']));
+  }
+
+  await ctx.reply(boxAnime(['⏳ A carregar episodios...', '🎬 ' + s.anime.title]));
+
+  let eps = [];
+  try {
+    eps = await loadEpisodes(s.anime.link, s.anime.source);
+  } catch (e) {
+    console.error('[anime eps]', e.message);
+  }
+  // filtra por modo se houver marca
+  if (mode === 'dub') {
+    const f = eps.filter((e) => e.kind === 'dub' || !e.kind);
+    if (f.length) eps = f;
+  } else if (mode === 'leg') {
+    const f = eps.filter((e) => e.kind === 'leg' || !e.kind);
+    if (f.length) eps = f;
+  }
+
+  if (!eps.length) {
+    // fallback: so o link da pagina
+    eps = [{ num: 1, title: s.anime.title, link: s.anime.link, kind: mode }];
+  }
+
+  s.step = 'episodes';
+  s.mode = mode;
+  s.episodes = eps;
+  saveSession(ctx, s);
+
+  s.step = 'episodes';
+  s.mode = mode;
+  s.episodes = eps;
+  s.epPage = 0;
+  saveSession(ctx, s);
+  return ctx.reply(formatEpPage(s, 0));
+}
+
+function parseEpRange(arg) {
+  const a = String(arg || '').trim();
+  if (/^\d+$/.test(a)) return [parseInt(a, 10)];
+  const m = a.match(/^(\d+)\s*[-/]\s*(\d+)$/);
+  if (m) {
+    let a1 = parseInt(m[1], 10);
+    let a2 = parseInt(m[2], 10);
+    if (a1 > a2) { const t = a1; a1 = a2; a2 = t; }
+    const out = [];
+    for (let i = a1; i <= a2 && out.length < 20; i++) out.push(i);
+    return out;
+  }
+  return [];
+}
+
+async function cmdDownloadStart(ctx, arg) {
+  const s = loadSession(ctx);
+  let epNums = parseEpRange(arg);
+  let targets = [];
+
+  if (/https?:\/\//i.test(arg)) {
+    const link = arg.trim().split(/\s+/)[0];
+    let num = 0;
+    const em = link.match(/(?:episodio|episode|ep)[_-]?(\d{1,4})/i);
+    if (em) num = parseInt(em[1], 10);
+    targets = [{ num: num || 1, title: 'EP ' + (num || '?'), link: link }];
+  } else if (s && s.episodes && s.episodes.length && epNums.length) {
+    targets = s.episodes.filter(function (e) { return epNums.indexOf(e.num) >= 0; });
+  }
+
+  if (!targets.length) {
+    return ctx.reply(
+      boxAnime([
+        '❌ Episodio nao encontrado.',
+        '1) *anime <nome>*',
+        '2) *dub* ou *leg*',
+        '3) *dwdanimeep 1*',
+        'ou *dwdanimeep* + link'
+      ])
+    );
+  }
+
+  await ctx.reply(boxAnime(['⏳ A verificar qualidades...', '🔗 ' + targets.length + ' EP(s)']));
+
+  let qualities = [];
+  try {
+    qualities = await listQualityOptions(targets[0].link);
+  } catch (_) {
+    qualities = [
+      { id: 'A1', label: 'A1 — 360p', format: 'best[height<=360]/best' },
+      { id: 'A2', label: 'A2 — 480p', format: 'best[height<=480]/best' },
+      { id: 'A3', label: 'A3 — 720p', format: 'best[height<=720]/best' },
+      { id: 'A4', label: 'A4 — HD/melhor', format: 'best' }
+    ];
+  }
+
+  const sess = s || { anime: { title: 'Anime' }, mode: '' };
+  sess.step = 'choose_quality';
+  sess.downloadTargets = targets;
+  sess.qualities = qualities;
+  if (!sess.anime) sess.anime = { title: targets[0].title || 'Anime' };
+  saveSession(ctx, sess);
+
+  const lines = [
+    '⬇️ *Download*',
+    '🎬 ' + (sess.anime.title || 'Anime'),
+    '📺 EP: ' + targets.map(function (t) { return t.num || '?'; }).join(', '),
+    '',
+    '*Qualidade (digita A1–A4):*'
+  ];
+  for (let i = 0; i < qualities.length; i++) {
+    lines.push(qualities[i].label);
+  }
+  lines.push('');
+  lines.push('Ex: *A3*');
+  return ctx.reply(boxAnime(lines));
+}
+
+async function cmdQualityPick(ctx, code) {
+  const s = loadSession(ctx);
+  if (!s || s.step !== 'choose_quality' || !s.qualities || !s.downloadTargets) {
+    return false;
+  }
+  const raw = String(code || '').trim().toUpperCase();
+  let quality = null;
+  for (let i = 0; i < s.qualities.length; i++) {
+    if (String(s.qualities[i].id).toUpperCase() === raw) {
+      quality = s.qualities[i];
+      break;
+    }
+  }
+  // aceita A1 ou so 1 se vier de alias
+  if (!quality && /^A?[1-4]$/.test(raw)) {
+    const n = parseInt(raw.replace('A', ''), 10) - 1;
+    if (n >= 0 && n < s.qualities.length) quality = s.qualities[n];
+  }
+  if (!quality) {
+    await ctx.reply(boxAnime(['Opcao invalida.', 'Usa *A1*, *A2*, *A3* ou *A4*.']));
+    return true;
+  }
+
+  const targets = s.downloadTargets.slice(0, 8);
+  const acq = (typeof dq !== 'undefined' && dq.tryAcquire) ? dq.tryAcquire(ctx, 'anime') : { ok: true };
+  if (acq && acq.ok === false) {
+    await ctx.reply(acq.reason || 'Download bloqueado/ocupado.');
+    return true;
+  }
+
+  await ctx.reply(
+    boxAnime([
+      '⏳ A baixar ficheiro...',
+      '🎞️ ' + quality.label,
+      '📦 ' + targets.length + ' EP(s)',
+      'Cancelar: *cancelardwd*'
+    ])
+  );
+
+  const files = [];
+  try {
+    for (let i = 0; i < targets.length; i++) {
+      if (typeof dq !== 'undefined' && dq.isCancelled && dq.isCancelled()) {
+        throw new Error('CANCELLED');
+      }
+      const ep = targets[i];
+      const destPattern = path.join(
+        TMP_DIR,
+        'anime_ep' + (ep.num || i + 1) + '_' + Date.now() + '.%(ext)s'
+      );
+      try {
+        await downloadWithYtdlp(ep.link, quality.format || 'best', destPattern);
+        const dirFiles = fs.readdirSync(TMP_DIR).filter(function (f) {
+          return f.indexOf('anime_ep' + (ep.num || i + 1) + '_') === 0;
+        });
+        // pega o mais recente deste prefixo
+        let best = null;
+        let bestT = 0;
+        for (const f of dirFiles) {
+          const full = path.join(TMP_DIR, f);
+          try {
+            const st = fs.statSync(full);
+            if (st.size > 1000 && st.mtimeMs > bestT) {
+              bestT = st.mtimeMs;
+              best = full;
+            }
+          } catch (_) {}
+        }
+        if (best) files.push(best);
+      } catch (e) {
+        console.error('[anime ytdlp]', ep.num, e.message);
+      }
+    }
+
+    if (!files.length) {
+      await ctx.reply(
+        boxAnime([
+          '❌ Nao foi possivel baixar o ficheiro.',
+          'O site pode bloquear o yt-dlp.',
+          'Atualiza: pip install -U yt-dlp',
+          'Ou abre o link no navegador.'
+        ])
+      );
+      return true;
+    }
+
+    if (files.length === 1) {
+      const buf = fs.readFileSync(files[0]);
+      const ext = path.extname(files[0]) || '.mp4';
+      const name =
+        String((s.anime && s.anime.title) || 'anime')
+          .replace(/[^\w\s-]/g, '')
+          .slice(0, 40) +
+        '_EP' +
+        (targets[0].num || '') +
+        ext;
+      await ctx.sock.sendMessage(
+        ctx.jid,
+        {
+          document: buf,
+          fileName: name,
+          mimetype: ext === '.mp4' ? 'video/mp4' : 'application/octet-stream',
+          caption: boxAnime(['✅ Download pronto', '🎞️ ' + quality.label, '📁 ' + name])
+        },
+        { quoted: ctx.msg }
+      );
+    } else {
+      const zipPath = path.join(TMP_DIR, 'anime_' + Date.now() + '.zip');
+      try {
+        await zipFiles(files, zipPath);
+        const buf = fs.readFileSync(zipPath);
+        await ctx.sock.sendMessage(
+          ctx.jid,
+          {
+            document: buf,
+            fileName: 'anime_eps.zip',
+            mimetype: 'application/zip',
+            caption: boxAnime(['✅ *' + files.length + '* EPs em ZIP', '🎞️ ' + quality.label])
+          },
+          { quoted: ctx.msg }
+        );
+        try { fs.unlinkSync(zipPath); } catch (_) {}
+      } catch (e) {
+        for (const f of files.slice(0, 3)) {
+          const buf = fs.readFileSync(f);
+          await ctx.sock.sendMessage(
+            ctx.jid,
+            { document: buf, fileName: path.basename(f), mimetype: 'video/mp4' },
+            { quoted: ctx.msg }
+          );
+        }
+      }
+    }
+  } catch (e) {
+    if (String(e.message) === 'CANCELLED') {
+      await ctx.reply(boxAnime(['🛑 Download cancelado.']));
+    } else {
+      console.error('[anime qpick]', e.message);
+      await ctx.reply(boxAnime(['❌ Erro no download.', String(e.message || e).slice(0, 80)]));
+    }
+  } finally {
+    if (typeof dq !== 'undefined' && dq.release) dq.release();
+    for (const f of files) {
+      try { fs.unlinkSync(f); } catch (_) {}
+    }
+    s.step = 'episodes';
+    s.downloadTargets = null;
+    s.qualities = null;
+    saveSession(ctx, s);
+  }
+  return true;
+}
+
+module.exports = [
+  {
+    name: 'anime',
+    aliases: ['j', 'buscaranime', 'panime', 'pesquisaranime'],
+    category: 'utilidades',
+    description: 'Pesquisa anime (categoria download)',
+    handler: async (ctx) => {
+      const query = (ctx.args || []).join(' ').trim();
+      if (!query) {
+        return ctx.reply(
+          boxAnime([
+            'Uso: *j <nome>*',
+            'Ex: *anime Solo Leveling*',
+            '',
+            'Depois: *dub* / *leg*',
+            'Download: *dwdanimeep 1*'
+          ])
+        );
+      }
+      try {
+        await ctx.reply(boxAnime(['🔎 A pesquisar anime...', '*' + query + '*']));
+      } catch (_) {}
+      return cmdSearch(ctx, query);
+    }
+  },
+  {
+    name: 'dub',
+    aliases: ['dublado'],
+    category: 'utilidades',
+    description: 'Anime dublado (sessao)',
+    handler: async (ctx) => cmdLang(ctx, 'dub')
+  },
+  {
+    name: 'leg',
+    aliases: ['legendado', 'legenda'],
+    category: 'utilidades',
+    description: 'Anime legendado (sessao)',
+    handler: async (ctx) => cmdLang(ctx, 'leg')
+  },
+  {
+    name: 'dwdanimeep',
+    aliases: ['downloadanime', 'baixaranime', 'dwanime', 'dwdanime'],
+    category: 'utilidades',
+    description: 'Download episodio anime',
+    handler: async (ctx) => {
+      const arg = (ctx.args || []).join(' ').trim();
+      if (!arg) {
+        return ctx.reply(
+          boxAnime([
+            'Uso:',
+            '*dwdanimeep 1*',
+            '*dwdanimeep 1-3*',
+            '*dwdanimeep* + link',
+            '',
+            'Antes: *anime <nome>* → *dub*/*leg*'
+          ])
+        );
+      }
+      return cmdDownloadStart(ctx, arg);
+    }
+  },
+  {
+    // escolha de qualidade 1-4 quando sessao ativa
+    name: 'animeq',
+    aliases: [],
+    category: 'utilidades',
+    description: 'interno qualidade anime',
+    handler: async (ctx) => {
+      return ctx.reply(boxAnime(['Usa o numero 1-4 apos dwdanimeep.']));
+    }
+  }
+];
+
+// Interceptar respostas numericas 1/2 na sessao via comandos curtos
+
+module.exports = module.exports.concat([
+  {
+    name: 'a1',
+    aliases: [],
+    category: 'utilidades',
+    description: 'Qualidade anime A1',
+    handler: async (ctx) => {
+      const s = loadSession(ctx);
+      if (s && s.step === 'choose_quality') return cmdQualityPick(ctx, 'A1');
+      return ctx.reply(boxAnime(['Nenhuma escolha de qualidade.', 'Usa *dwdanimeep* primeiro.']));
+    }
+  },
+  {
+    name: 'a2',
+    aliases: [],
+    category: 'utilidades',
+    description: 'Qualidade anime A2',
+    handler: async (ctx) => {
+      const s = loadSession(ctx);
+      if (s && s.step === 'choose_quality') return cmdQualityPick(ctx, 'A2');
+      return ctx.reply(boxAnime(['Nenhuma escolha de qualidade.']));
+    }
+  },
+  {
+    name: 'a3',
+    aliases: [],
+    category: 'utilidades',
+    description: 'Qualidade anime A3',
+    handler: async (ctx) => {
+      const s = loadSession(ctx);
+      if (s && s.step === 'choose_quality') return cmdQualityPick(ctx, 'A3');
+      return ctx.reply(boxAnime(['Nenhuma escolha de qualidade.']));
+    }
+  },
+  {
+    name: 'a4',
+    aliases: [],
+    category: 'utilidades',
+    description: 'Qualidade anime A4',
+    handler: async (ctx) => {
+      const s = loadSession(ctx);
+      if (s && s.step === 'choose_quality') return cmdQualityPick(ctx, 'A4');
+      return ctx.reply(boxAnime(['Nenhuma escolha de qualidade.']));
+    }
+  }
+]);
+
+module.exports = module.exports.concat([
+  {
+    name: 'maiseps',
+    aliases: ['moreeps', 'proxeps', 'episodiosmais', '+eps'],
+    category: 'utilidades',
+    description: 'Proxima pagina de episodios anime',
+    handler: async function (ctx) {
+      const s = loadSession(ctx);
+      if (!s || !s.episodes || !s.episodes.length) {
+        return ctx.reply(boxAnime(['Sem lista de episodios.', 'Faz: *anime <nome>* → *dub*/*leg*']));
+      }
+      const pageSize = 30;
+      const page = (s.epPage || 0) + 1;
+      const start = page * pageSize;
+      if (start >= s.episodes.length) {
+        return ctx.reply(boxAnime(['✅ Ja mostraste todos os *' + s.episodes.length + '* episodios.']));
+      }
+      s.epPage = page;
+      saveSession(ctx, s);
+      return ctx.reply(formatEpPage(s, page));
+    }
+  }
+]);
+
+module.exports = module.exports.concat([
+  {
+    name: 'd1',
+    aliases: ['dub1'],
+    category: 'utilidades',
+    description: 'Anime dublado D1',
+    handler: async function (ctx) {
+      const s = loadSession(ctx);
+      if (s && s.step === 'choose_lang') return cmdLang(ctx, 'dub');
+      return ctx.reply(boxAnime(['Nada pendente para D1.', 'Fluxo: *anime* → *T1* → *D1*']));
+    }
+  },
+  {
+    name: 'l2',
+    aliases: ['leg2'],
+    category: 'utilidades',
+    description: 'Anime legendado L2',
+    handler: async function (ctx) {
+      const s = loadSession(ctx);
+      if (s && s.step === 'choose_lang') return cmdLang(ctx, 'leg');
+      return ctx.reply(boxAnime(['Nada pendente para L2.', 'Fluxo: *anime* → *T1* → *L2*']));
+    }
+  },
+  {
+    name: 't1',
+    aliases: [],
+    category: 'utilidades',
+    description: 'Temporada 1',
+    handler: async function (ctx) { return cmdSeason(ctx, 1); }
+  },
+  {
+    name: 't2',
+    aliases: [],
+    category: 'utilidades',
+    description: 'Temporada 2',
+    handler: async function (ctx) { return cmdSeason(ctx, 2); }
+  },
+  {
+    name: 't3',
+    aliases: [],
+    category: 'utilidades',
+    description: 'Temporada 3',
+    handler: async function (ctx) { return cmdSeason(ctx, 3); }
+  },
+  {
+    name: 't4',
+    aliases: [],
+    category: 'utilidades',
+    description: 'Temporada 4',
+    handler: async function (ctx) { return cmdSeason(ctx, 4); }
+  },
+  {
+    name: 't5',
+    aliases: [],
+    category: 'utilidades',
+    description: 'Temporada 5',
+    handler: async function (ctx) { return cmdSeason(ctx, 5); }
+  }
+]);
+

@@ -1,0 +1,56 @@
+/**
+ * Comandos extras de diversão para completar quantidade real
+ */
+
+const actions = [
+  ['aplaudir', '👏 aplaudiu'],
+  ['dancar', '💃 dançou com'],
+  ['cantar', '🎤 cantou para'],
+  ['rir', '😂 riu de'],
+  ['chorar', '😢 chorou com'],
+  ['gritar', '📢 gritou com'],
+  ['sussurrar', '🤫 sussurrou para'],
+  ['cumprimentar', '🤝 cumprimentou'],
+  ['acenar', '👋 acenou para'],
+  ['piscar', '😉 piscou para'],
+  ['abracarforte', '💪 abraçou forte'],
+  ['highfive', '🙌 deu high-five em'],
+  ['cutucar', '👉 cutucou'],
+  ['empurrar', '🫸 empurrou'],
+  ['puxar', ' Pulled'],
+  ['carregar', '🏋️ carregou'],
+  ['proteger', '🛡️ protegeu'],
+  ['salvar', '🦸 salvou'],
+  ['desafiar', '⚔️ desafiou'],
+  ['provocar', '😏 provocou'],
+  ['ignorar', '😑 ignorou'],
+  ['observar', '👀 observou'],
+  ['admirar', '😍 admirou'],
+  ['invejar', '😒 invejou'],
+  ['apoiar', '🤝 apoiou'],
+  ['criticar', '📝 criticou'],
+  ['elogiar', '🌟 elogiou'],
+  ['agradecer', '🙏 agradeceu a'],
+  ['desculpar', '😔 pediu desculpas a'],
+  ['perdoar', '💖 perdoou'],
+  ['odeio', '💢 disse que odeia'],
+  ['amo', '❤️ disse que ama'],
+  ['gosto', '💛 disse que gosta de'],
+  ['melhoramigo', '👬 nomeou melhor amigo'],
+  ['rival', '⚔️ declarou rival'],
+  ['mentor', '📚 escolheu como mentor'],
+  ['aluno', '🎓 adotou como aluno'],
+  ['patrao_fun', '👔 nomeou patrão'],
+  ['funcionario', '💼 contratou'],
+  ['socio', '🤝 fez sociedade com']
+];
+
+module.exports = actions.map(([name, verb]) => ({
+  name,
+  category: 'diversao',
+  description: `Ação: ${name}`,
+  handler: async (ctx) => {
+    const t = ctx.getMentionedOrQuoted() || ctx.sender;
+    await ctx.reply(`${verb} @${t.split('@')[0]}!`, { mentions: [ctx.sender, t] });
+  }
+}));

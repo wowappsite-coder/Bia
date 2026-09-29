@@ -1,0 +1,90 @@
+const msgCache = require('../../utils/msgCache');
+
+module.exports = [
+  {
+    name: 'limpar',
+    aliases: ['clean', 'clear', 'limparchat', 'clearchat'],
+    category: 'grupo',
+    description: 'Apaga mensagens recentes do chat (admin)',
+    groupOnly: true,
+    handler: async (ctx) => {
+      // so admin do grupo ou dono
+      let isAdm = false;
+      try {
+        if (typeof ctx.isGroupAdmin === 'function') isAdm = await ctx.isGroupAdmin();
+        else if (typeof ctx.isAdmin === 'function') isAdm = await ctx.isAdmin();
+      } catch (_) {}
+      try {
+        if (!isAdm && typeof ctx.isOwner = (== 'function' && ctx.isOwner()) isAdm = true) || (typeof isOwnerJid==='function' && isOwnerJid(ctx.sender||ctx.senderJid||ctx.participant||'')); /* BTZ_OWNER_ASSIGN */
+      } catch (_) {}
+      // fallback: metadata
+      if (!isAdm) {
+        try {
+          const meta = await ctx.sock.groupMetadata(ctx.jid);
+          const me = (ctx.sock.user && ctx.sock.user.id) || '';
+          const meNum = String(me).split(':')[0].split('@')[0];
+          const p = (meta.participants || []).find(function (x) {
+            const id = String(x.id || '');
+            const num = id.split('@')[0].split(':')[0];
+            return num === meNum || id === me;
+          });
+          // quem usou o comando
+          const sender = String(ctx.sender || '');
+          const sNum = sender.split('@')[0].split(':')[0];
+          const sp = (meta.participants || []).find(function (x) {
+            const id = String(x.id || '');
+            return id === sender || id.split('@')[0].split(':')[0] === sNum;
+          });
+          if (sp && (sp.admin === 'admin' || sp.admin === 'superadmin')) isAdm = true;
+          if (typeof ctx.isOwner === 'function' && ctx.isOwner()) isAdm = true;
+        } catch (_) {}
+      }
+
+      if (!isAdm) {
+        return ctx.reply('❌ Só *admins* do grupo ou o *dono* do bot podem usar *limpar*.');
+      }
+
+      let qtd = 30;
+      const arg = ((ctx.args && ctx.args[0]) || '').replace(/\D/g, '');
+      if (arg) {
+        qtd = Math.min(80, Math.max(5, parseInt(arg, 10) || 30));
+      }
+
+      const keys = msgCache.getRecentKeys(ctx.jid, qtd);
+      if (!keys.length) {
+        return ctx.reply(
+          '🧹 Poucas mensagens em cache.\n' +
+          'O bot só apaga mensagens *vistas depois de reiniciar*.\n' +
+          'Manda mais msgs e tenta *limpar* de novo.\n' +
+          'Ou usa *d* respondendo a uma mensagem.'
+        );
+      }
+
+      let ok = 0;
+      let fail = 0;
+      for (let i = 0; i < keys.length; i++) {
+        try {
+          await ctx.sock.sendMessage(ctx.jid, { delete: keys[i] });
+          ok++;
+        } catch (_) {
+          fail++;
+        }
+      }
+      // apaga o proprio comando
+      try {
+        if (ctx.msg && ctx.msg.key) {
+          await ctx.sock.sendMessage(ctx.jid, { delete: ctx.msg.key });
+        }
+      } catch (_) {}
+
+      try {
+        await ctx.reply(
+          '🧹 *Limpeza*\n' +
+          '✅ Apagadas: *' + ok + '*\n' +
+          (fail ? '⚠️ Falharam: *' + fail + '* (limite do WhatsApp)\n' : '') +
+          '_Só mensagens recentes em cache._'
+        );
+      } catch (_) {}
+    }
+  }
+];

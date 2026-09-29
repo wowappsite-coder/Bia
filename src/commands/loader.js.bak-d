@@ -1,0 +1,104 @@
+/**
+ * Carrega todos os módulos de comandos
+ */
+
+const fs = require('fs');
+const path = require('path');
+const registry = require('./registry');
+
+const categories = [
+  'admin',
+  'bn',
+  'economia',
+  'rpg',
+  'internet',
+  'dono',
+  'utilidades',
+  'stickers',
+  'seguranca',
+  'imagem',
+  'grupo',
+  'diversao',
+  'xp',
+  'isekai'
+];
+
+function loadCommands() {
+  let total = 0;
+
+  for (const cat of categories) {
+    const dir = path.join(__dirname, cat);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      continue;
+    }
+
+    const files = fs.readdirSync(dir).filter(f => f.endsWith('.js'));
+    for (const file of files) {
+      try {
+        const mod = require(path.join(dir, file));
+        // Módulo pode exportar um comando ou array de comandos
+        const cmds = Array.isArray(mod) ? mod : (mod.commands || [mod]);
+        for (const cmd of cmds) {
+          if (cmd && cmd.name && cmd.handler) {
+            registry.register(cmd);
+            total++;
+          }
+        }
+      } catch (e) {
+        console.error('[LOADER] ERRO LOAD ' + cat + '/' + file + ':', e.message);
+      }
+    }
+  }
+
+  // Comandos personalizados isolados por grupo
+  try {
+    const { getDb } = require('../database');
+    const database = getDb();
+    const customs = database.prepare(
+      'SELECT DISTINCT name, with_prefix FROM custom_commands'
+    ).all();
+    for (const c of customs) {
+      const cmdName = c.name;
+      if (registry.get(cmdName)) continue;
+      registry.register({
+        name: cmdName,
+        category: 'custom',
+        description: 'Comando personalizado (por grupo)',
+        ownerOnly: false,
+        handler: async (ctx) => {
+          try {
+            const db = getDb();
+            const cg = ctx.isGroup ? ctx.jid : 'global';
+            // 1) resposta deste grupo
+            let row = db.prepare(
+              'SELECT response FROM custom_commands WHERE name = ? AND group_jid = ? LIMIT 1'
+            ).get(cmdName, cg);
+            // 2) comando GLOBAL (addcmd3)
+            if (!row) {
+              row = db.prepare(
+                "SELECT response FROM custom_commands WHERE name = ? AND group_jid = '*' LIMIT 1"
+              ).get(cmdName);
+            }
+            if (!row) {
+              // nao existe aqui nem global — mudo
+              return;
+            }
+            return ctx.reply(row.response);
+          } catch (err) {
+            console.error('[CUSTOM CMD]', err.message);
+            return ctx.reply('❌ Erro no comando personalizado.');
+          }
+        }
+      });
+      total++;
+    }
+  } catch (e) {
+    // DB pode não estar pronto ainda
+  }
+
+  console.log(`[LOADER] ${total} comandos carregados | Principais: ${registry.stats().totalMain}`);
+  return registry.stats();
+}
+
+module.exports = { loadCommands };

@@ -1,0 +1,64 @@
+const path = require('path');
+const fs = require('fs');
+
+function loadEnv() {
+  const envPath = path.join(process.cwd(), '.env');
+  const env = {};
+  if (fs.existsSync(envPath)) {
+    const content = fs.readFileSync(envPath, 'utf8');
+    content.split('\n').forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const [key, ...rest] = trimmed.split('=');
+      if (key) env[key.trim()] = rest.join('=').trim();
+    });
+  }
+  return env;
+}
+
+const env = loadEnv();
+
+const config = {
+  botName: env.BOT_NAME || 'BEATRIZ BOT',
+  ownerNumber: (env.OWNER_NUMBER || '874288439').replace(/\D/g, ''),
+  ownerLid: (env.OWNER_LID || '135055783522320').replace(/\D/g, ''),
+  botNumber: (env.BOT_NUMBER || '852935085').replace(/\D/g, ''),
+  prefixes: (env.PREFIXES || '!,.,#,/').split(',').map(p => p.trim()).filter(Boolean),
+  timezone: env.TIMEZONE || 'Africa/Maputo',
+  dbPath: env.DB_PATH || path.join(process.cwd(), 'data', 'beatriz.db'),
+  sessionPath: env.SESSION_PATH || path.join(process.cwd(), 'session'),
+  logLevel: env.LOG_LEVEL || 'info',
+  logPath: env.LOG_PATH || path.join(process.cwd(), 'logs'),
+  antispamLimit: parseInt(env.ANTISPAM_LIMIT || '8', 10),
+  xpPerMessage: parseInt(env.XP_PER_MESSAGE || '5', 10),
+  xpPerCommand: parseInt(env.XP_PER_COMMAND || '15', 10),
+  // Preços de aluguel (edite só aqui)
+  rentalPlans: [
+    { days: 7,   emoji: '🟢', price: env.RENT_7  || '30 MT' },
+    { days: 15,  emoji: '🔵', price: env.RENT_15 || '70 MT' },
+    { days: 30,  emoji: '🟣', price: env.RENT_30 || '100 MT' },
+    { days: 60,  emoji: '🟠', price: env.RENT_60 || '180 MT' },
+    { days: 90,  emoji: '🔴', price: env.RENT_90 || '280 MT' },
+    { days: 365, emoji: '⭐', price: env.RENT_365 || '500 MT' }
+  ],
+  get ownerDisplay() {
+    const n = String(this.ownerNumber || '').replace(/\D/g, '');
+    if (n.length >= 9) return '+' + (n.startsWith('258') ? n : '258' + n.slice(-9));
+    return n || 'Owner';
+  },
+  get ownerJid() {
+    return this.ownerNumber + '@s.whatsapp.net';
+  },
+  isOwner(jid) {
+    if (!jid) return false;
+    const raw = String(jid);
+    const digits = raw.replace(/\D/g, '');
+    const owner = String(this.ownerNumber || '').replace(/\D/g, '');
+    const lid = String(this.ownerLid || '').replace(/\D/g, '');
+    if (lid && (digits === lid || raw.includes(lid))) return true;
+    if (owner && (digits === owner || digits.endsWith(owner) || digits.slice(-9) === owner.slice(-9))) return true;
+    return false;
+  }
+};
+
+module.exports = config;

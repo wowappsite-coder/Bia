@@ -1,0 +1,79 @@
+const { getDb } = require('../database');
+const { generateCharacter, parseData } = require('./character');
+
+function ensureTables() {
+  getDb().exec(`
+    CREATE TABLE IF NOT EXISTS isekai_players (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      jid TEXT NOT NULL,
+      group_jid TEXT DEFAULT 'global',
+      name TEXT,
+      data TEXT DEFAULT '{}',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(jid, group_jid)
+    );
+    CREATE TABLE IF NOT EXISTS isekai_group (
+      group_jid TEXT PRIMARY KEY,
+      enabled INTEGER DEFAULT 0,
+      data TEXT DEFAULT '{}',
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_isekai_players_jid ON isekai_players(jid);
+    CREATE TABLE IF NOT EXISTS isekai_battles (
+      jid TEXT NOT NULL,
+      group_jid TEXT NOT NULL DEFAULT 'global',
+      state TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (jid, group_jid)
+    );
+  `);
+}
+function scopeGroup(ctx){ return ctx&&ctx.isGroup?ctx.jid:'global'; }
+function isIsekaiEnabled(groupJid){
+  try{
+    ensureTables();
+    if(!groupJid||groupJid==='global') return true;
+    const row=getDb().prepare('SELECT enabled FROM isekai_group WHERE group_jid=?').get(groupJid);
+    return !!(row&&Number(row.enabled)===1);
+  }catch(_){ return true; }
+}
+function setIsekaiEnabled(groupJid,on){
+  ensureTables();
+  getDb().prepare(`INSERT INTO isekai_group (group_jid,enabled,updated_at) VALUES (?,?,datetime('now'))
+    ON CONFLICT(group_jid) DO UPDATE SET enabled=excluded.enabled, updated_at=datetime('now')`).run(groupJid,on?1:0);
+}
+function getPlayer(jid,groupJid){
+  ensureTables();
+  return getDb().prepare('SELECT * FROM isekai_players WHERE jid=? AND group_jid=?').get(jid,groupJid||'global');
+}
+function getPlayerData(jid,groupJid){ return parseData(getPlayer(jid,groupJid)); }
+function savePlayerData(jid,groupJid,data){
+  ensureTables();
+  const g=groupJid||'global';
+  const name=(data&&data.name)||'';
+  const json=JSON.stringify(data||{});
+  const existing=getPlayer(jid,g);
+  if(existing) getDb().prepare(`UPDATE isekai_players SET name=?, data=?, updated_at=datetime('now') WHERE jid=? AND group_jid=?`).run(name,json,jid,g);
+  else getDb().prepare(`INSERT INTO isekai_players (jid,group_jid,name,data) VALUES (?,?,?,?)`).run(jid,g,name,json);
+  return getPlayer(jid,g);
+}
+function createPlayer(jid,groupJid,name){
+  ensureTables();
+  const g=groupJid||'global';
+  const existing=getPlayer(jid,g);
+  if(existing){
+    const d=parseData(existing);
+    if(d&&d.phase===1&&d.stub){
+      const full=generateCharacter(name||existing.name||'Viajante');
+      savePlayerData(jid,g,full);
+      return { ok:true, upgraded:true, data:full };
+    }
+    return { ok:false, reason:'exists', data:d, row:existing };
+  }
+  const full=generateCharacter(name);
+  savePlayerData(jid,g,full);
+  return { ok:true, data:full };
+}
+function createPlayerStub(jid,groupJid,name){ return createPlayer(jid,groupJid,name); }
+module.exports={ ensureTables, scopeGroup, isIsekaiEnabled, setIsekaiEnabled, getPlayer, getPlayerData, savePlayerData, createPlayer, createPlayerStub };

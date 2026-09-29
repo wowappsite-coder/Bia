@@ -1,0 +1,198 @@
+'use strict';
+/**
+ * PARTE 4/4 — Video + IA + extras
+ */
+function safeEngine() {
+  try { return require('../../services/search/engine'); } catch (e) { return null; }
+}
+function safeProviders() {
+  try { return require('../../services/search/providers'); } catch (e) { return null; }
+}
+
+async function unavailable(ctx, name) {
+  return ctx.reply(
+    '⚠️ *' + name + '* nao disponivel automaticamente.\n' +
+    '• Video: *video <texto>*\n' +
+    '• IA: *bia <texto>* ou *ia <texto>*\n' +
+    '• Menu: *menupesquisa*'
+  );
+}
+
+async function doVideo(ctx, label) {
+  const q = (ctx.args || []).join(' ').trim();
+  if (!q) return ctx.reply('Ex: *video natureza*');
+  const engine = safeEngine();
+  const prov = safeProviders();
+  try { await ctx.reply('🎬 A procurar video...'); } catch (e) {}
+  try {
+    let r = null;
+    if (prov && prov.openverseVideo) {
+      try { r = await prov.openverseVideo(q); } catch (e) {}
+    }
+    if (!r && engine && engine.searchVideo) {
+      r = await engine.searchVideo(q);
+    }
+    if (!r) return ctx.reply('❌ Nenhum video nas fontes ativas.');
+    return ctx.reply(
+      '╭──〔 🎬 VIDEO 〕──╮\n' +
+      '│ 🔎 ' + q + '\n' +
+      '│ 🎬 ' + String(r.title || '').slice(0, 80) + '\n' +
+      '│ 🌐 ' + (r.source || label) + '\n' +
+      (r.pageUrl ? ('│ 🔗 ' + r.pageUrl + '\n') : '') +
+      (r.videoUrl ? ('│ ▶️ ' + r.videoUrl + '\n') : '') +
+      '╰────────────────╯'
+    );
+  } catch (e) {
+    return ctx.reply('❌ Falha na pesquisa de video.');
+  }
+}
+
+async function doAiHint(ctx, name) {
+  const q = (ctx.args || []).join(' ').trim();
+  return ctx.reply(
+    '🤖 *' + name + '* nao tem API ligada neste bot.\n' +
+    'Usa a Beatriz (Groq):\n' +
+    '*bia ' + (q || 'sua pergunta') + '*\n' +
+    '*ia ' + (q || 'sua pergunta') + '*'
+  );
+}
+
+const VIDEO_LIST = [
+  ['videosearch', 'Video Search'],
+  ['openversevid', 'Openverse Video'],
+  ['coverrvid', 'Coverr'],
+  ['mixkitvid', 'Mixkit'],
+  ['videvoid', 'Videvo'],
+  ['videezyvid', 'Videezy'],
+  ['dareful', 'Dareful'],
+  ['vidsplay', 'Vidsplay'],
+  ['splitshire', 'Splitshire'],
+  ['lifeofvids', 'Life of Vids'],
+  ['mazwai', 'Mazwai'],
+  ['motionplaces', 'Motion Places'],
+  ['beachfront', 'Beachfront B-Roll'],
+  ['clipstill', 'Clipstill'],
+  ['ignitemotion', 'Ignite Motion'],
+  ['freenature', 'Free Nature Stock'],
+  ['motionarray', 'Motion Array'],
+  ['motionelements', 'Motion Elements'],
+  ['productioncrate', 'ProductionCrate'],
+  ['storyblocks', 'Storyblocks'],
+  ['artgrid', 'Artgrid'],
+  ['pond5', 'Pond5'],
+  ['nasavid', 'NASA Video'],
+  ['esavid', 'ESA Multimedia'],
+  ['cernmedia', 'CERN Media'],
+  ['britishpathe', 'British Pathé'],
+  ['usarchives', 'US National Archives'],
+  ['cdcphil', 'CDC PHIL'],
+  ['noaamulti', 'NOAA Multimedia']
+];
+
+const AI_LIST = [
+  ['chatgpt', 'ChatGPT'],
+  ['gemini', 'Gemini'],
+  ['deepseek', 'DeepSeek'],
+  ['claude', 'Claude'],
+  ['copilot', 'Microsoft Copilot'],
+  ['perplexity', 'Perplexity'],
+  ['grokai', 'Grok'],
+  ['mistral', 'Mistral Le Chat'],
+  ['metaai', 'Meta AI'],
+  ['poe', 'Poe'],
+  ['youcom', 'You.com'],
+  ['phind', 'Phind'],
+  ['characterai', 'Character.AI'],
+  ['huggingchat', 'HuggingChat'],
+  ['ai21', 'AI21'],
+  ['cohere', 'Cohere'],
+  ['togetherai', 'Together AI'],
+  ['replicate', 'Replicate'],
+  ['stability', 'Stability AI'],
+  ['leonardo', 'Leonardo AI'],
+  ['firefly', 'Adobe Firefly'],
+  ['msdesigner', 'Microsoft Designer'],
+  ['aistudio', 'Google AI Studio'],
+  ['ghcopilot', 'GitHub Copilot'],
+  ['notebooklm', 'NotebookLM']
+];
+
+const VIDEO_ACTIVE = new Set(['videosearch', 'openversevid']);
+
+const cmds = [];
+
+VIDEO_LIST.forEach(function (pair) {
+  const name = pair[0];
+  const label = pair[1];
+  cmds.push({
+    name: name,
+    aliases: [],
+    category: 'utilidades',
+    description: 'Video ' + label,
+    async handler(ctx) {
+      if (VIDEO_ACTIVE.has(name)) return doVideo(ctx, label);
+      return unavailable(ctx, label);
+    }
+  });
+});
+
+AI_LIST.forEach(function (pair) {
+  const name = pair[0];
+  const label = pair[1];
+  cmds.push({
+    name: name,
+    aliases: [],
+    category: 'utilidades',
+    description: 'IA ' + label,
+    async handler(ctx) {
+      return doAiHint(ctx, label);
+    }
+  });
+});
+
+// Extras finais para fechar contagem / utilitarios do sistema pesquisa
+cmds.push({
+  name: 'fontesativas',
+  aliases: ['sourceson'],
+  category: 'utilidades',
+  description: 'Lista fontes ativas',
+  async handler(ctx) {
+    return ctx.reply(
+      '✅ *Fontes ativas*\n' +
+      '🌐 Wikipedia, DuckDuckGo, MDN, npm, arXiv\n' +
+      '🖼️ Openverse, Wikimedia\n' +
+      '🎬 Openverse Video\n' +
+      '🤖 bia / ia (Groq)\n\n' +
+      '📚 *menupesquisa* — menu\n' +
+      '🔎 *pesquisa <texto>*\n' +
+      '🖼️ *imagem <texto>*\n' +
+      '🎬 *video <texto>*'
+    );
+  }
+});
+
+cmds.push({
+  name: 'catalogocompleto',
+  aliases: ['todasfontes'],
+  category: 'utilidades',
+  description: 'Resumo do catalogo 140',
+  async handler(ctx) {
+    let n1 = 0, n2 = 0, n3 = 0, n4 = 0;
+    try { n1 = require('./pesquisaFontesP1.js').length; } catch (e) {}
+    try { n2 = require('./pesquisaFontesP2.js').length; } catch (e) {}
+    try { n3 = require('./pesquisaFontesP3.js').length; } catch (e) {}
+    try { n4 = require('./pesquisaFontesP4.js').length; } catch (e) {}
+    return ctx.reply(
+      '📚 *CATALOGO PESQUISA*\n' +
+      'P1 Web: ' + n1 + '\n' +
+      'P2 Docs/Ciencia: ' + n2 + '\n' +
+      'P3 Imagens: ' + n3 + '\n' +
+      'P4 Video+IA: ' + n4 + '\n' +
+      'Total partes: ' + (n1 + n2 + n3 + n4) + '\n\n' +
+      'Muitas fontes estao no catalogo mas *desativadas*\n' +
+      'sem API publica segura (nao ha bypass).'
+    );
+  }
+});
+
+module.exports = cmds;

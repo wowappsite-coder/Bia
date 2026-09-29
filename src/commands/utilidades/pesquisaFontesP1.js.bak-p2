@@ -1,0 +1,132 @@
+'use strict';
+/**
+ * PARTE 1/4 — Fontes WEB / motores de busca (comandos individuais)
+ * Cada comando e real: se a fonte estiver ativa usa o motor; senao responde indisponivel.
+ */
+const path = require('path');
+
+function safeEngine() {
+  try { return require('../../services/search/engine'); } catch (e) { return null; }
+}
+function safeProviders() {
+  try { return require('../../services/search/providers'); } catch (e) { return null; }
+}
+
+async function replyUnavailable(ctx, name) {
+  return ctx.reply(
+    '⚠️ *' + name + '* nao esta disponivel para acesso automatico neste bot.\n' +
+    'Usa *pesquisa <texto>* com as fontes ativas (Wikipedia, DuckDuckGo, MDN…).\n' +
+    'Ou *menupesquisa* para ver o menu.'
+  );
+}
+
+async function doWeb(ctx, preferred) {
+  const q = (ctx.args || []).join(' ').trim();
+  if (!q) return ctx.reply('Ex: *' + (ctx.command || preferred) + ' inteligencia artificial*');
+  const engine = safeEngine();
+  const prov = safeProviders();
+  if (!engine && !prov) {
+    return ctx.reply('❌ Sistema de pesquisa ainda nao carregado. Instala o modulo search primeiro.');
+  }
+  try {
+    if (preferred === 'wikipedia' && prov && prov.wikipedia) {
+      const r = await prov.wikipedia(q);
+      return ctx.reply('📖 *Wikipedia*\n' + (r.summary || '').slice(0, 900) + (r.url ? '\n🔗 ' + r.url : ''));
+    }
+    if (preferred === 'duckduckgo' && prov && prov.duckduckgo) {
+      const r = await prov.duckduckgo(q);
+      return ctx.reply('🔎 *DuckDuckGo*\n' + (r.summary || '').slice(0, 900) + (r.url ? '\n🔗 ' + r.url : ''));
+    }
+    if (preferred === 'mdn' && prov && prov.mdn) {
+      const r = await prov.mdn(q);
+      return ctx.reply('💻 *MDN*\n' + (r.summary || '').slice(0, 900));
+    }
+    if (preferred === 'npm' && prov && prov.npmSearch) {
+      const r = await prov.npmSearch(q);
+      return ctx.reply('📦 *npm*\n' + (r.summary || '').slice(0, 900));
+    }
+    if (preferred === 'arxiv' && prov && prov.arxiv) {
+      const r = await prov.arxiv(q);
+      return ctx.reply('🔬 *arXiv*\n' + (r.summary || '').slice(0, 900));
+    }
+    // fallback generico
+    if (engine && engine.searchWeb) {
+      const r = await engine.searchWeb(q);
+      if (r) {
+        return ctx.reply(
+          '🔎 *' + (r.source || 'Pesquisa') + '*\n' +
+          String(r.summary || '').slice(0, 900) +
+          (r.url ? '\n🔗 ' + r.url : '')
+        );
+      }
+    }
+  } catch (e) {
+    return ctx.reply('❌ Falha em *' + preferred + '*. Tenta *pesquisa ' + q + '*.');
+  }
+  return replyUnavailable(ctx, preferred);
+}
+
+// Lista PARTE 1 — motores / web
+const LIST = [
+  ['google', 'Google'],
+  ['bing', 'Bing'],
+  ['duckduckgo', 'DuckDuckGo'],
+  ['ddg', 'DuckDuckGo'],
+  ['brave', 'Brave Search'],
+  ['yahoo', 'Yahoo'],
+  ['startpage', 'Startpage'],
+  ['ecosia', 'Ecosia'],
+  ['kagi', 'Kagi'],
+  ['mojeek', 'Mojeek'],
+  ['qwant', 'Qwant'],
+  ['swisscows', 'Swisscows'],
+  ['searx', 'SearXNG'],
+  ['searxng', 'SearXNG'],
+  ['wikipedia', 'Wikipedia'],
+  ['wiki', 'Wikipedia'],
+  ['wikidata', 'Wikidata'],
+  ['wikimedia', 'Wikimedia'],
+  ['archive', 'Internet Archive'],
+  ['wayback', 'Internet Archive'],
+  ['openverse', 'Openverse'],
+  ['scholar', 'Google Scholar'],
+  ['semanticscholar', 'Semantic Scholar'],
+  ['pubmed', 'PubMed'],
+  ['arxiv', 'arXiv'],
+  ['crossref', 'Crossref'],
+  ['openalex', 'OpenAlex'],
+  ['coreac', 'CORE'],
+  ['europepmc', 'Europe PMC'],
+  ['nasa', 'NASA'],
+  ['noaa', 'NOAA'],
+  ['usgs', 'USGS'],
+  ['loc', 'Library of Congress'],
+  ['europeana', 'Europeana'],
+  ['mdn', 'MDN']
+];
+
+const ACTIVE = new Set(['duckduckgo', 'ddg', 'wikipedia', 'wiki', 'arxiv', 'mdn', 'openverse']);
+
+const cmds = LIST.map(function (pair) {
+  const name = pair[0];
+  const label = pair[1];
+  return {
+    name: name,
+    aliases: [],
+    category: 'utilidades',
+    description: 'Pesquisa via ' + label,
+    async handler(ctx) {
+      if (ACTIVE.has(name)) {
+        const map = {
+          ddg: 'duckduckgo',
+          wiki: 'wikipedia',
+          openverse: 'duckduckgo'
+        };
+        return doWeb(ctx, map[name] || name);
+      }
+      return replyUnavailable(ctx, label);
+    }
+  };
+});
+
+module.exports = cmds;

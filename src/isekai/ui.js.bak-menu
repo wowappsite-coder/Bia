@@ -1,0 +1,246 @@
+/**
+ * Identidade visual + Assistente Isekai (original)
+ * Nome configuravel — nao copia personagens de animes
+ */
+const ASSISTANT_NAME = 'Rafael';
+const ASSISTANT_ICON = '🔮';
+
+function bar(cur, max, size) {
+  size = size || 10;
+  max = Math.max(1, max || 1);
+  cur = Math.max(0, Math.min(max, cur || 0));
+  const filled = Math.round((cur / max) * size);
+  return '█'.repeat(filled) + '░'.repeat(size - filled);
+}
+
+function panel(title, body, footer) {
+  let t = '╭━━〔 ' + title + ' 〕━━╮\n';
+  t += String(body || '').replace(/\n+$/, '') + '\n';
+  if (footer) t += footer + '\n';
+  t += '╰━━━━━━━━━━━━━━━━╯';
+  return t;
+}
+
+function formatMenu() {
+  return (
+    '╭━━━〔 🌍 MODO ISEKAI 〕━━━╮\n' +
+    '┃\n' +
+    '┃ ⚔️ *AVENTURA*\n' +
+    '┃ ├ isklutar · iskboss\n' +
+    '┃ ├ iskdungeon · iskexplorar\n' +
+    '┃ └ iskviajar · iskbatalha\n' +
+    '┃\n' +
+    '┃ 🧙 *PERSONAGEM*\n' +
+    '┃ ├ iskstatus · iskatributos\n' +
+    '┃ ├ iskhabilidades\n' +
+    '┃ └ isknivel · isktitulos\n' +
+    '┃\n' +
+    '┃ 🎒 *INVENTÁRIO*\n' +
+    '┃ ├ iskinventario · iskequipar\n' +
+    '┃ ├ iskconsumir · iskcraft\n' +
+    '┃ └ iskvender\n' +
+    '┃\n' +
+    '┃ 💰 *ECONOMIA*\n' +
+    '┃ ├ isksaldo · iskloja\n' +
+    '┃ └ iskcomprar · iskvender\n' +
+    '┃\n' +
+    '┃ 🏰 *MUNDO*\n' +
+    '┃ ├ iskamiapa · iskcidade\n' +
+    '┃ ├ isknpc · iskfalar\n' +
+    '┃ └ iskeventos · iskrumores\n' +
+    '┃\n' +
+    '┃ ❤️ *SOCIAL*\n' +
+    '┃ ├ iskrelacoes · iskparty\n' +
+    '┃ └ iskfamiilia · iskcasar\n' +
+    '┃\n' +
+    '┃ ✨ *PODER*\n' +
+    '┃ ├ iskguilda · iskquest\n' +
+    '┃ ├ iskescola · iskdeuses\n' +
+    '┃ └ iskdestino · isktranscender\n' +
+    '┃\n' +
+    '┃ 📜 *HISTÓRIA*\n' +
+    '┃ ├ iskhistoría · iskhistorico\n' +
+    '┃ └ iskdica · iskajuda\n' +
+    '┃\n' +
+    '╰━━━━━━━━━━━━━━━━━━━━━━╯\n' +
+    '_Prefixo isk · Bot antigo: menu / loja_'
+  );
+}
+
+function formatStatus(data) {
+  if (!data) return 'Sem personagem.';
+  const race = (data.race && (data.race.name || data.race)) || '-';
+  const cls = (data.class && (data.class.name || data.class)) || '-';
+  const a = data.attrs || {};
+  const titles = (data.titles || []).slice(0, 5).join(', ') || 'nenhum';
+  let body =
+    '👤 *' + (data.name || '-') + '*\n' +
+    '🧬 ' + race + ' · ⚔️ ' + cls + '\n' +
+    '⭐ Nv ' + (data.level || 1) + ' · XP ' + (data.xp || 0) + '/' + (data.xpNext || '?') + '\n' +
+    '🏅 Rank ' + (data.rank || 'F') + ' · 🎯 Pot ' + (data.potential || '-') + '\n\n' +
+    '❤️ HP ' + bar(data.hp, data.hpMax) + ' ' + (data.hp || 0) + '/' + (data.hpMax || 0) + '\n' +
+    '🔷 MP ' + bar(data.mana, data.manaMax, 8) + ' ' + (data.mana || 0) + '/' + (data.manaMax || 0) + '\n\n' +
+    '⚔️ For ' + (a.forca || 0) + ' · 🛡️ Def ' + (a.defesa || 0) + '\n' +
+    '💨 Agi ' + (a.agilidade || 0) + ' · 🔮 Mag ' + (a.magia || 0) + '\n' +
+    '🎯 Prec ' + (a.precisao || 0) + ' · 🍀 Sort ' + (a.sorte || 0) + '\n\n' +
+    '🪙 IENE: ' + (data.iene || 0) + '\n' +
+    '🏷️ ' + titles;
+  if (data.dead || data.deadPending) body += '\n\n☠️ *ESTADO: FALECIDO*';
+  if (data.location) body += '\n📍 ' + data.location;
+  return panel('STATUS', body);
+}
+
+function formatCombat(playerData, state) {
+  if (!state || !state.enemy) return 'Sem combate.';
+  const e = state.enemy;
+  const body =
+    '👤 *' + (playerData.name || 'Tu') + '*\n' +
+    '❤️ ' + bar(state.playerHp, playerData.hpMax) + ' ' + state.playerHp + '/' + (playerData.hpMax || 0) + '\n' +
+    '🔷 ' + bar(state.playerMana, playerData.manaMax, 8) + ' ' + state.playerMana + '/' + (playerData.manaMax || 0) + '\n\n' +
+    '        ⚔️ VS\n\n' +
+    (e.emoji || '👹') + ' *' + e.name + '*\n' +
+    '❤️ ' + bar(e.hp, e.hpMax) + ' ' + e.hp + '/' + e.hpMax + '\n\n' +
+    (state.type === 'dungeon' ? '🏰 Sala ' + state.room + '/' + state.maxRooms + '\n' : '') +
+    'Acoes: iskatacar · iskusar · iskdefender · iskfugir';
+  return panel('COMBATE', body);
+}
+
+function formatVictory(enemy, rew) {
+  let body =
+    (enemy.emoji || '👹') + ' *' + enemy.name + '* derrotado!\n\n' +
+    '⭐ XP: +' + (rew.xp || 0) + '\n' +
+    '🪙 IENE: +' + (rew.iene || 0);
+  if (rew.loot && rew.loot.length) body += '\n\n🎁 Loot\n• ' + rew.loot.join('\n• ');
+  if (rew.leveled) body += '\n\n⬆️ Level UP → Nv ' + rew.level;
+  return panel('VITORIA', body);
+}
+
+function formatInventory(data) {
+  const inv = data.inventory || {};
+  const keys = Object.keys(inv).filter(function (k) { return inv[k] > 0; });
+  let body = '🪙 IENE: ' + (data.iene || 0) + '\n\n';
+  if (!keys.length) body += '(vazio)';
+  else keys.slice(0, 20).forEach(function (k) {
+    body += '• ' + k + ' ×' + inv[k] + '\n';
+  });
+  const eq = data.equipment || {};
+  const slots = Object.keys(eq);
+  if (slots.length) {
+    body += '\n⚔️ Equipado\n';
+    slots.forEach(function (s) {
+      const id = eq[s];
+      const dur = data.itemDur && data.itemDur[id] != null ? ' (' + data.itemDur[id] + ')' : '';
+      body += '• ' + s + ': ' + id + dur + '\n';
+    });
+  }
+  return panel('INVENTARIO', body);
+}
+
+function formatShop(iene) {
+  return panel(
+    'LOJA',
+    '🗡️ Armas · 🛡️ Armaduras\n' +
+    '🧪 Pocoes · 💍 Acessorios\n' +
+    '🍖 Comida · 🧱 Materiais\n\n' +
+    '🪙 Teu IENE: ' + (iene || 0) + '\n\n' +
+    'iskloja · iskcomprar <id>\niskvender <id>'
+  );
+}
+
+/** Assistente contextual — so sugestoes, nao bloqueia */
+function assistant(data, context) {
+  context = context || 'geral';
+  const lines = [];
+  const tips = [];
+  const avoid = [];
+  const hp = data.hp || 0;
+  const hpMax = data.hpMax || 100;
+  const hpPct = hp / Math.max(1, hpMax);
+  const iene = data.iene || 0;
+  const inv = data.inventory || {};
+
+  const openings = {
+    vitoria: ['Analise concluida.', 'Combate encerrado.', 'Resultado favoravel.'],
+    derrota: ['Analise de combate concluida.', 'Derrota registada.'],
+    loot: ['Item analisado.', 'Loot processado.'],
+    compra: ['Compra registada.', 'Transacao concluida.'],
+    geral: ['Analise do estado atual.', 'Sugestoes com base no teu perfil.']
+  };
+  const pool = openings[context] || openings.geral;
+  lines.push(pool[Math.floor(Math.random() * pool.length)]);
+
+  if (data.dead || data.deadPending) {
+    lines.push('Estado: falecido. Opcao: iskreencarnar / iskmorte');
+    return formatAssistant(lines, ['iskreencarnar', 'iskvidas'], ['isklutar', 'iskdungeon']);
+  }
+
+  if (hpPct < 0.25) {
+    tips.push('iskconsumir pocao');
+    avoid.push('iskboss / iskdungeon (HP critico)');
+  } else if (hpPct < 0.5) {
+    tips.push('Curar antes de boss');
+  }
+
+  if ((data.mana || 0) < 10) tips.push('iskconsumir mana_pocao');
+
+  if (iene < 20 && Object.keys(inv).length) tips.push('iskvender materiais');
+  if (iene >= 50 && !Object.keys(data.equipment || {}).length) tips.push('iskloja → iskequipar');
+
+  if ((data.level || 1) < 5) tips.push('isklutar · iskexplorar');
+  else if ((data.level || 1) >= 8) tips.push('iskdungeon · iskboss');
+
+  if (data.guild) tips.push('iskquest');
+  else tips.push('iskguilda_entrar aventureiros');
+
+  if (!data.location || data.location === 'vila_inicial') tips.push('iskmapa · iskviajar');
+
+  if (context === 'vitoria') {
+    tips.push('iskinventario');
+    if (Object.keys(inv).some(function (k) { return /ferro|couro|cristal|min/.test(k); })) {
+      tips.push('iskcraft ou iskvender');
+    }
+  }
+  if (context === 'derrota') {
+    tips.push('iskconsumir pocao');
+    tips.push('Melhorar equip (iskloja)');
+    avoid.push('Mesmo inimigo agora');
+  }
+
+  // unique tips max 4
+  const seen = {};
+  const uniq = [];
+  tips.forEach(function (t) {
+    if (!seen[t] && uniq.length < 4) { seen[t] = 1; uniq.push(t); }
+  });
+
+  return formatAssistant(lines, uniq, avoid.slice(0, 2));
+}
+
+function formatAssistant(lines, tips, avoid) {
+  let t = ASSISTANT_ICON + ' *' + ASSISTANT_NAME + '*\n';
+  t += lines.join(' ') + '\n';
+  if (tips && tips.length) {
+    t += '\nSugestoes:\n';
+    tips.forEach(function (x, i) { t += (i + 1) + '. ' + x + '\n'; });
+  }
+  if (avoid && avoid.length) {
+    t += '\n⚠️ Evita:\n';
+    avoid.forEach(function (x) { t += '• ' + x + '\n'; });
+  }
+  return t.trim();
+}
+
+function withAssistant(mainMsg, data, context) {
+  try {
+    return String(mainMsg) + '\n\n' + assistant(data, context);
+  } catch (_) {
+    return String(mainMsg);
+  }
+}
+
+module.exports = {
+  ASSISTANT_NAME, ASSISTANT_ICON,
+  bar, panel, formatMenu, formatStatus, formatCombat,
+  formatVictory, formatInventory, formatShop,
+  assistant, withAssistant
+};

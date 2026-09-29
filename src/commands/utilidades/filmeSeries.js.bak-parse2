@@ -1,0 +1,519 @@
+/**
+ * Filme / Serie — Pobreflix (filmeseriesonline.net)
+ */
+const fs = require('fs');
+const path = require('path');
+const https = require('https');
+const http = require('http');
+const { execFile } = require('child_process');
+let dq;
+try { dq = require('../../services/downloadQueue'); } catch (_) { dq = null; }
+
+const BASE = 'https://filmeseriesonline.net';
+const SESS_DIR = path.join(__dirname, '../../../data/filme-sessions');
+const TMP_DIR = path.join(__dirname, '../../../data/filme-tmp');
+try { fs.mkdirSync(SESS_DIR, { recursive: true }); } catch (_) {}
+try { fs.mkdirSync(TMP_DIR, { recursive: true }); } catch (_) {}
+
+const ALIASES = {
+  sobrenatural: 'Sobrenatural',
+  supernatural: 'Supernatural',
+  st: 'Stranger Things',
+  'stranger things': 'Stranger Things',
+  got: 'Game of Thrones',
+  bb: 'Breaking Bad',
+  'breaking bad': 'Breaking Bad',
+  lacasa: 'La Casa de Papel',
+  'round 6': 'Round 6',
+  'squid game': 'Round 6',
+  avengers: 'Vingadores',
+  ultimato: 'Vingadores Ultimato',
+  endgame: 'Vingadores Ultimato',
+  coringa: 'Coringa',
+  joker: 'Coringa',
+  duna: 'Duna',
+  dune: 'Duna',
+  matrix: 'Matrix',
+  batman: 'Batman'
+};
+
+function expandQuery(q) {
+  const raw = String(q || '').trim();
+  const key = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const out = [];
+  const seen = {};
+  function add(x) {
+    const t = String(x || '').trim();
+    if (!t) return;
+    const k = t.toLowerCase();
+    if (seen[k]) return;
+    seen[k] = true;
+    out.push(t);
+  }
+  add(raw);
+  if (ALIASES[key]) add(ALIASES[key]);
+  const nospace = key.replace(/\s+/g, '');
+  if (ALIASES[nospace]) add(ALIASES[nospace]);
+  const first = key.split(/\s+/)[0];
+  if (first && ALIASES[first]) add(ALIASES[first]);
+  return out;
+}
+
+function box(lines) {
+  let t = '╭━━━〔 🎬 FILME / SÉRIE 〕━━━╮\n';
+  for (let i = 0; i < lines.length; i++) {
+    const L = lines[i];
+    t += (L === '' || L == null) ? '┃\n' : '┃ ' + L + '\n';
+  }
+  t += '╰━━━━━━━━━━━━━━━━━━━━━━╯';
+  return t;
+}
+
+function sessionKey(ctx) {
+  return String(ctx.jid || '') + '|' + String(ctx.sender || '');
+}
+function sessPath(ctx) {
+  return path.join(SESS_DIR, Buffer.from(sessionKey(ctx)).toString('hex').slice(0, 48) + '.json');
+}
+function loadSession(ctx) {
+  try {
+    const p = sessPath(ctx);
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch (_) {}
+  return null;
+}
+function saveSession(ctx, data) {
+  try { fs.writeFileSync(sessPath(ctx), JSON.stringify(data)); } catch (_) {}
+}
+
+function stripTags(html) {
+  return String(html || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function httpGet(url, timeoutMs) {
+  return new Promise(function (resolve, reject) {
+    const lib = url.startsWith('https') ? https : http;
+    const req = lib.get(
+      url,
+      {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36',
+          Accept: 'text/html,application/xhtml+xml',
+          'Accept-Language': 'pt-BR,pt;q=0.9'
+        },
+        timeout: timeoutMs || 15000
+      },
+      function (res) {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return httpGet(res.headers.location, timeoutMs).then(resolve, reject);
+        }
+        let body = '';
+        res.on('data', function (c) {
+          body += c;
+          if (body.length > 2500000) req.destroy();
+        });
+        res.on('end', function () {
+          resolve({ status: res.statusCode || 0, body: body });
+        });
+      }
+    );
+    req.on('error', reject);
+    req.on('timeout', function () {
+      req.destroy();
+      reject(new Error('timeout'));
+    });
+  });
+}
+
+function scoreTitle(title, query) {
+  const t = String(title || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const q = String(query || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  let score = 0;
+  if (t === q) score += 10;
+  if (t.indexOf(q) === 0) score += 6;
+  if (t.indexOf(q) >= 0) score += 4;
+  const qWords = q.split(/\s+/).filter(function (w) { return w.length > 1; });
+  for (let i = 0; i < qWords.length; i++) {
+    if (t.indexOf(qWords[i]) >= 0) score += 2;
+  }
+  if (/bastidores|behind|recap|resumo|trailer|teaser|podcast|making/.test(t)) score -= 4;
+  return score;
+}
+
+function parseSearch(html, query, loose) {
+  const out = [];
+  const seen = {};
+  const qNorm = String(query).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const qWords = qNorm.split(/\s+/).filter(function (w) { return w.length > 1; });
+  const re = /<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(html)) && out.length < 30) {
+    let href = m[1];
+    if (!href || href.startsWith('#') || /javascript:/i.test(href)) continue;
+    if (href.indexOf('//') === 0) href = 'https:' + href;
+    if (!/\/(filme|serie|series)\//i.test(href)) continue;
+    if (/\/(genero|pais|tag|inicio|ultimos|populares|proximos)\//i.test(href)) continue;
+
+    let link = href;
+    if (!/^https?:\/\//i.test(link)) {
+      link = link.charAt(0) === '/' ? BASE + link : BASE + '/' + link;
+    }
+    try {
+      const u = new URL(link);
+      if (/vembaixarfilmes\.net|filmeseriesonline\.net|pobreflix/i.test(u.hostname)) {
+        link = BASE + u.pathname + u.search;
+      }
+    } catch (_) {}
+
+    if (seen[link]) continue;
+
+    let title = stripTags(m[2]);
+    title = title.replace(/\s*HD\s*\( /i, '').replace(/HD \)/i, '').trim();
+    if (!title || title.length < 2) continue;
+    if (/^(filmes|séries|series|início|inicio|gêneros|generos)$/i.test(title)) continue;
+
+    const tNorm = title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    let hit = 0;
+    for (let i = 0; i < qWords.length; i++) {
+      if (tNorm.indexOf(qWords[i]) >= 0) hit++;
+    }
+    if (!loose) {
+      if (qWords.length && hit === 0) continue;
+    } else {
+      const partial = hit > 0 || tNorm.indexOf(qNorm.slice(0, Math.min(4, qNorm.length))) >= 0;
+      if (!partial) continue;
+    }
+
+    seen[link] = true;
+    out.push({
+      title: title.slice(0, 100),
+      link: link,
+      type: /\/serie/i.test(link) ? 'serie' : 'filme',
+      source: 'Pobreflix',
+      score: scoreTitle(title, query)
+    });
+  }
+  out.sort(function (a, b) { return (b.score || 0) - (a.score || 0); });
+  return out;
+}
+
+async function runSearch(q, loose) {
+  const url = BASE + '/?s=' + encodeURIComponent(q);
+  try {
+    const res = await httpGet(url, 15000);
+    if (!res || !res.body) return [];
+    return parseSearch(res.body, q, !!loose);
+  } catch (e) {
+    console.error('[filme]', e.message);
+    return [];
+  }
+}
+
+async function searchAll(query) {
+  const variants = expandQuery(query);
+  console.log('[filme] variants:', variants.join(' | '));
+  const seen = {};
+  function merge(list, bag) {
+    for (let i = 0; i < (list || []).length; i++) {
+      const r = list[i];
+      const k = (r.link || r.title).toLowerCase();
+      if (seen[k]) continue;
+      seen[k] = true;
+      bag.push(r);
+    }
+  }
+
+  for (let v = 0; v < variants.length; v++) {
+    const exact = await runSearch(variants[v], false);
+    if (exact.length) {
+      exact.sort(function (a, b) { return (b.score || 0) - (a.score || 0); });
+      return { results: exact.slice(0, 8), used: variants[v] };
+    }
+  }
+
+  let similar = [];
+  for (let v = 0; v < variants.length; v++) {
+    merge(await runSearch(variants[v], true), similar);
+  }
+  const first = String(variants[0] || '').split(/\s+/)[0];
+  if (first && first.length >= 3) {
+    merge(await runSearch(first, true), similar);
+    merge(await runSearch(first, false), similar);
+  }
+  merge(await runSearch(query, true), similar);
+  similar.sort(function (a, b) { return (b.score || 0) - (a.score || 0); });
+  similar = similar.slice(0, 8);
+  return { results: similar, used: variants[0] };
+}
+
+function ytdlpBin() {
+  const cands = [
+    path.join(process.env.HOME || '', '.local/bin/yt-dlp'),
+    '/data/data/com.termux/files/usr/bin/yt-dlp',
+    'yt-dlp'
+  ];
+  for (let i = 0; i < cands.length; i++) {
+    try {
+      if (cands[i] === 'yt-dlp' || fs.existsSync(cands[i])) return cands[i];
+    } catch (_) {}
+  }
+  return 'yt-dlp';
+}
+
+function runYtdlp(args, timeoutMs) {
+  return new Promise(function (resolve, reject) {
+    execFile(ytdlpBin(), args, { timeout: timeoutMs || 300000, maxBuffer: 20 * 1024 * 1024 }, function (err, stdout, stderr) {
+      if (err) {
+        err.stderr = stderr;
+        return reject(err);
+      }
+      resolve(String(stdout || ''));
+    });
+  });
+}
+
+const QUALITIES = [
+  { id: 'F1', label: 'F1 — 360p', format: 'best[height<=360]/best' },
+  { id: 'F2', label: 'F2 — 480p', format: 'best[height<=480]/best' },
+  { id: 'F3', label: 'F3 — 720p', format: 'best[height<=720]/best' },
+  { id: 'F4', label: 'F4 — HD/melhor', format: 'best' }
+];
+
+async function cmdSearch(ctx, query, preferType) {
+  await ctx.reply(box(['🔎 A pesquisar...', '*' + query + '*']));
+  const pack = await searchAll(query);
+  let results = pack.results || [];
+
+  if (preferType === 'filme') {
+    results = results.filter(function (r) { return r.type === 'filme'; })
+      .concat(results.filter(function (r) { return r.type !== 'filme'; }));
+  } else if (preferType === 'serie') {
+    results = results.filter(function (r) { return r.type === 'serie'; })
+      .concat(results.filter(function (r) { return r.type !== 'serie'; }));
+  }
+  results = results.slice(0, 8);
+
+  if (!results.length) {
+    return ctx.reply(box(['❌ Nenhum resultado para:', '*' + query + '*', '', 'Tenta outro nome.']));
+  }
+
+  saveSession(ctx, { step: 'choose_result', query: query, results: results, used: pack.used });
+
+  const usedNote =
+    pack.used && String(pack.used).toLowerCase() !== String(query).toLowerCase()
+      ? '(pesquisa: *' + pack.used + '*)'
+      : '';
+
+  const lines = ['✅ *Resultados* (' + results.length + ')', usedNote, '🔎 ' + query, '', '_Escolhe *N1* … *N' + results.length + '*:_'].filter(Boolean);
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    lines.push('*' + ('N' + (i + 1)) + '* ' + (r.type === 'serie' ? '📺' : '🎥') + ' ' + r.title);
+  }
+  lines.push('', 'Ex: *N1*');
+  return ctx.reply(box(lines));
+}
+
+async function cmdPickResult(ctx, n) {
+  const s = loadSession(ctx);
+  if (!s || s.step !== 'choose_result' || !s.results) {
+    return ctx.reply(box(['Nada pendente.', 'Usa: *filme <nome>* ou *serie <nome>*']));
+  }
+  const idx = parseInt(n, 10) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= s.results.length) {
+    return ctx.reply(box(['Opção inválida.', 'Usa *N1* até *N' + s.results.length + '*']));
+  }
+  const item = s.results[idx];
+  s.step = 'choose_quality';
+  s.selected = item;
+  saveSession(ctx, s);
+  return ctx.reply(box([
+    '✅ *Selecionado*',
+    (item.type === 'serie' ? '📺' : '🎥') + ' *' + item.title + '*',
+    '🌐 ' + item.source,
+    '🔗 ' + item.link,
+    '',
+    '*Qualidade:*',
+    'F1 — 360p',
+    'F2 — 480p',
+    'F3 — 720p',
+    'F4 — HD/melhor',
+    '',
+    'Digite: *F1* *F2* *F3* ou *F4*'
+  ]));
+}
+
+async function cmdQuality(ctx, code) {
+  const s = loadSession(ctx);
+  if (!s || s.step !== 'choose_quality' || !s.selected) return false;
+  const raw = String(code || '').trim().toUpperCase();
+  let quality = null;
+  for (let i = 0; i < QUALITIES.length; i++) {
+    if (QUALITIES[i].id === raw) { quality = QUALITIES[i]; break; }
+  }
+  if (!quality && /^F?[1-4]$/.test(raw)) {
+    const n = parseInt(raw.replace('F', ''), 10) - 1;
+    if (n >= 0 && n < QUALITIES.length) quality = QUALITIES[n];
+  }
+  if (!quality) {
+    await ctx.reply(box(['Opção inválida.', 'Usa *F1*, *F2*, *F3* ou *F4*.']));
+    return true;
+  }
+
+  const item = s.selected;
+  const acq = dq && dq.tryAcquire ? dq.tryAcquire(ctx, 'filme') : { ok: true };
+  if (acq && acq.ok === false) {
+    await ctx.reply(acq.reason || 'Download bloqueado/ocupado.');
+    return true;
+  }
+
+  await ctx.reply(box(['⏳ A baixar ficheiro...', '🎞️ ' + quality.label, '🎬 ' + item.title, 'Cancelar: *cancelardwd*']));
+
+  let filePath = null;
+  try {
+    if (dq && dq.isCancelled && dq.isCancelled()) throw new Error('CANCELLED');
+    const destPattern = path.join(TMP_DIR, 'filme_' + Date.now() + '.%(ext)s');
+    await runYtdlp([
+      '--no-warnings', '-f', quality.format, '-o', destPattern,
+      '--merge-output-format', 'mp4', '--no-playlist', item.link
+    ], 300000);
+
+    const files = fs.readdirSync(TMP_DIR).filter(function (f) { return f.indexOf('filme_') === 0; });
+    let best = null, bestT = 0;
+    for (let i = 0; i < files.length; i++) {
+      const full = path.join(TMP_DIR, files[i]);
+      try {
+        const st = fs.statSync(full);
+        if (st.size > 1000 && st.mtimeMs > bestT) { bestT = st.mtimeMs; best = full; }
+      } catch (_) {}
+    }
+    if (!best) throw new Error('Sem ficheiro (yt-dlp)');
+    filePath = best;
+    const buf = fs.readFileSync(best);
+    const ext = path.extname(best) || '.mp4';
+    const name = String(item.title).replace(/[^\w\s\-à-úÀ-Ú]/gi, '').slice(0, 50).trim().replace(/\s+/g, '_') + ext;
+
+    await ctx.sock.sendMessage(ctx.jid, {
+      document: buf,
+      fileName: name,
+      mimetype: ext === '.mp4' ? 'video/mp4' : 'application/octet-stream',
+      caption: box(['✅ Download pronto', '🎬 *' + item.title + '*', '🎞️ ' + quality.label, '📁 ' + name])
+    }, { quoted: ctx.msg });
+  } catch (e) {
+    if (String(e.message) === 'CANCELLED') await ctx.reply(box(['🛑 Download cancelado.']));
+    else {
+      console.error('[filme dl]', e.message);
+      await ctx.reply(box(['❌ Não foi possível baixar.', String(e.message || e).slice(0, 100), '', 'Link: ' + item.link]));
+    }
+  } finally {
+    if (dq && dq.release) dq.release();
+    if (filePath) { try { fs.unlinkSync(filePath); } catch (_) {} }
+    s.step = 'choose_result';
+    s.selected = null;
+    saveSession(ctx, s);
+  }
+  return true;
+}
+
+async function cmdDwLink(ctx, arg) {
+  const link = String(arg || '').trim().split(/\s+/)[0];
+  if (!/^https?:\/\//i.test(link)) return ctx.reply(box(['Uso: *dwfilme* <link>']));
+  saveSession(ctx, {
+    step: 'choose_quality',
+    selected: { title: 'Download', link: link, type: 'filme', source: 'link' },
+    results: []
+  });
+  return ctx.reply(box(['⬇️ *Link recebido*', '🔗 ' + link.slice(0, 70), '', '*Qualidade:* F1 F2 F3 F4', 'Ex: *F3*']));
+}
+
+module.exports = [
+  {
+    name: 'filme',
+    aliases: ['filmes', 'movie', 'movies'],
+    category: 'utilidades',
+    description: 'Pesquisar filme (Pobreflix)',
+    handler: async function (ctx) {
+      const q = (ctx.args && ctx.args.join(' ')) || '';
+      if (!q.trim()) return ctx.reply(box(['Uso: *filme <nome>*', 'Ex: *filme Vingadores*']));
+      return cmdSearch(ctx, q.trim(), 'filme');
+    }
+  },
+  {
+    name: 'serie',
+    aliases: ['series', 'série', 'tvshow'],
+    category: 'utilidades',
+    description: 'Pesquisar série (Pobreflix)',
+    handler: async function (ctx) {
+      const q = (ctx.args && ctx.args.join(' ')) || '';
+      if (!q.trim()) return ctx.reply(box(['Uso: *serie <nome>*', 'Ex: *serie Stranger Things*']));
+      return cmdSearch(ctx, q.trim(), 'serie');
+    }
+  },
+  {
+    name: 'fs',
+    aliases: ['filmeserie', 'buscarfilme'],
+    category: 'utilidades',
+    description: 'Pesquisar filme ou série',
+    handler: async function (ctx) {
+      const q = (ctx.args && ctx.args.join(' ')) || '';
+      if (!q.trim()) return ctx.reply(box(['Uso: *fs <nome>*']));
+      return cmdSearch(ctx, q.trim(), null);
+    }
+  },
+  {
+    name: 'dwfilme',
+    aliases: ['dlfilme', 'baixarfilme'],
+    category: 'utilidades',
+    description: 'Download por link',
+    handler: async function (ctx) {
+      return cmdDwLink(ctx, (ctx.args && ctx.args.join(' ')) || '');
+    }
+  },
+  { name: 'n1', aliases: [], category: 'utilidades', description: 'N1', handler: async (ctx) => cmdPickResult(ctx, 1) },
+  { name: 'n2', aliases: [], category: 'utilidades', description: 'N2', handler: async (ctx) => cmdPickResult(ctx, 2) },
+  { name: 'n3', aliases: [], category: 'utilidades', description: 'N3', handler: async (ctx) => cmdPickResult(ctx, 3) },
+  { name: 'n4', aliases: [], category: 'utilidades', description: 'N4', handler: async (ctx) => cmdPickResult(ctx, 4) },
+  { name: 'n5', aliases: [], category: 'utilidades', description: 'N5', handler: async (ctx) => cmdPickResult(ctx, 5) },
+  { name: 'n6', aliases: [], category: 'utilidades', description: 'N6', handler: async (ctx) => cmdPickResult(ctx, 6) },
+  { name: 'n7', aliases: [], category: 'utilidades', description: 'N7', handler: async (ctx) => cmdPickResult(ctx, 7) },
+  { name: 'n8', aliases: [], category: 'utilidades', description: 'N8', handler: async (ctx) => cmdPickResult(ctx, 8) },
+  {
+    name: 'f1', aliases: [], category: 'utilidades', description: 'F1',
+    handler: async function (ctx) {
+      const s = loadSession(ctx);
+      if (s && s.step === 'choose_quality') return cmdQuality(ctx, 'F1');
+      return ctx.reply(box(['Nada pendente. *filme <nome>* → *N1* → *F1*']));
+    }
+  },
+  {
+    name: 'f2', aliases: [], category: 'utilidades', description: 'F2',
+    handler: async function (ctx) {
+      const s = loadSession(ctx);
+      if (s && s.step === 'choose_quality') return cmdQuality(ctx, 'F2');
+      return ctx.reply(box(['Nada pendente.']));
+    }
+  },
+  {
+    name: 'f3', aliases: [], category: 'utilidades', description: 'F3',
+    handler: async function (ctx) {
+      const s = loadSession(ctx);
+      if (s && s.step === 'choose_quality') return cmdQuality(ctx, 'F3');
+      return ctx.reply(box(['Nada pendente.']));
+    }
+  },
+  {
+    name: 'f4', aliases: [], category: 'utilidades', description: 'F4',
+    handler: async function (ctx) {
+      const s = loadSession(ctx);
+      if (s && s.step === 'choose_quality') return cmdQuality(ctx, 'F4');
+      return ctx.reply(box(['Nada pendente.']));
+    }
+  }
+];

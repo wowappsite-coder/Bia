@@ -1,0 +1,193 @@
+const { getItem, listShop, RECIPES, rollLoot, SHOP_CATS } = require('./items');
+
+const MAX_BUY_QTY = 50;
+const INV_SOFT_CAP = 200;
+
+function ensureInv(data) {
+  if (!data.inventory || typeof data.inventory !== 'object') data.inventory = {};
+  if (!data.equipment || typeof data.equipment !== 'object') data.equipment = {};
+  if (data.iene == null || isNaN(data.iene)) data.iene = 0;
+  data.iene = Math.max(0, Math.floor(Number(data.iene) || 0));
+  return data;
+}
+
+function invCount(data) {
+  ensureInv(data);
+  let n = 0;
+  Object.keys(data.inventory).forEach(function (k) {
+    n += Math.max(0, Number(data.inventory[k]) || 0);
+  });
+  return n;
+}
+
+function addItem(data, itemId, qty) {
+  ensureInv(data);
+  qty = Math.floor(Number(qty) || 0);
+  if (qty <= 0 || !getItem(itemId)) return false;
+  if (invCount(data) + qty > INV_SOFT_CAP) return false;
+  data.inventory[itemId] = (data.inventory[itemId] || 0) + qty;
+  return true;
+}
+
+function removeItem(data, itemId, qty) {
+  ensureInv(data);
+  qty = Math.floor(Number(qty) || 0);
+  if (qty <= 0) return false;
+  const have = data.inventory[itemId] || 0;
+  if (have < qty) return false;
+  data.inventory[itemId] = have - qty;
+  if (data.inventory[itemId] <= 0) delete data.inventory[itemId];
+  return true;
+}
+
+function buy(data, itemId, qty) {
+  ensureInv(data);
+  qty = Math.floor(Number(qty) || 1);
+  if (qty < 1 || qty > MAX_BUY_QTY) return { ok: false, msg: 'Quantidade invalida (1-' + MAX_BUY_QTY + ').' };
+  const item = getItem(itemId);
+  if (!item || item.buy == null) return { ok: false, msg: 'Item nao esta a venda.' };
+  const cost = item.buy * qty;
+  if (data.iene < cost) return { ok: false, msg: 'IENE insuficiente. Precisas Y' + cost + ' (tens Y' + data.iene + ').' };
+  if (invCount(data) + qty > INV_SOFT_CAP) return { ok: false, msg: 'Inventario cheio.' };
+  data.iene -= cost;
+  addItem(data, itemId, qty);
+  return { ok: true, cost: cost, qty: qty, item: item, iene: data.iene };
+}
+
+function sell(data, itemId, qty) {
+  ensureInv(data);
+  qty = Math.floor(Number(qty) || 1);
+  if (qty < 1 || qty > MAX_BUY_QTY) return { ok: false, msg: 'Quantidade invalida (1-' + MAX_BUY_QTY + ').' };
+  const item = getItem(itemId);
+  if (!item) return { ok: false, msg: 'Item desconhecido.' };
+  const eq = data.equipment || {};
+  for (const slot of Object.keys(eq)) {
+    if (eq[slot] === itemId && (data.inventory[itemId] || 0) <= qty) {
+      return { ok: false, msg: 'Desequipa primeiro: iskdesequipar ' + slot };
+    }
+  }
+  if (!removeItem(data, itemId, qty)) return { ok: false, msg: 'Nao tens quantidade suficiente.' };
+  const gain = (item.sell != null ? item.sell : Math.floor((item.buy || 0) * 0.4)) * qty;
+  data.iene += gain;
+  return { ok: true, gain: gain, qty: qty, item: item, iene: data.iene };
+}
+
+function equip(data, itemId) {
+  ensureInv(data);
+  const item = getItem(itemId);
+  if (!item) return { ok: false, msg: 'Item desconhecido.' };
+  if (!item.slot) return { ok: false, msg: 'Este item nao se equipa.' };
+  if ((data.inventory[itemId] || 0) < 1) return { ok: false, msg: 'Nao tens este item.' };
+  data.equipment[item.slot] = itemId;
+  applyEquipBonuses(data);
+  return { ok: true, slot: item.slot, item: item };
+}
+
+function unequip(data, slotOrId) {
+  ensureInv(data);
+  let slot = slotOrId;
+  if (!data.equipment[slot]) {
+    Object.keys(data.equipment).forEach(function (s) {
+      if (data.equipment[s] === slotOrId) slot = s;
+    });
+  }
+  if (!data.equipment[slot]) return { ok: false, msg: 'Nada equipado nesse slot.' };
+  const id = data.equipment[slot];
+  delete data.equipment[slot];
+  applyEquipBonuses(data);
+  return { ok: true, slot: slot, itemId: id };
+}
+
+function applyEquipBonuses(data) {
+  ensureInv(data);
+  const bonus = { atk:0, def:0, mag:0, agi:0, prec:0, sorte:0, hp:0 };
+  Object.keys(data.equipment).forEach(function (slot) {
+    const it = getItem(data.equipment[slot]);
+    if (!it) return;
+    if (it.atk) bonus.atk += it.atk;
+    if (it.def) bonus.def += it.def;
+    if (it.mag) bonus.mag += it.mag;
+    if (it.agi) bonus.agi += it.agi;
+    if (it.prec) bonus.prec += it.prec;
+    if (it.sorte) bonus.sorte += it.sorte;
+    if (it.hp) bonus.hp += it.hp;
+  });
+  data.equipBonus = bonus;
+  return bonus;
+}
+
+function craft(data, recipeId) {
+  ensureInv(data);
+  const rec = RECIPES[recipeId];
+  if (!rec) return { ok: false, msg: 'Receita desconhecida. iskcraft' };
+  if ((data.level || 1) < (rec.level || 1)) return { ok: false, msg: 'Nivel minimo: ' + rec.level };
+  const need = rec.need || {};
+  for (const mat of Object.keys(need)) {
+    if ((data.inventory[mat] || 0) < need[mat]) {
+      return { ok: false, msg: 'Falta material: ' + mat + ' x' + need[mat] };
+    }
+  }
+  for (const mat of Object.keys(need)) removeItem(data, mat, need[mat]);
+  if (!addItem(data, rec.result, rec.qty || 1)) {
+    for (const mat of Object.keys(need)) addItem(data, mat, need[mat]);
+    return { ok: false, msg: 'Inventario cheio.' };
+  }
+  return { ok: true, result: rec.result, qty: rec.qty || 1 };
+}
+
+function applyLoot(data, enemy) {
+  ensureInv(data);
+  const luck = (data.attrs && data.attrs.sorte) || data.sorte || 10;
+  const drops = rollLoot(enemy, luck);
+  const got = [];
+  drops.forEach(function (d) {
+    if (addItem(data, d.id, d.qty)) got.push(d.id + ' x' + d.qty);
+  });
+  return got;
+}
+
+function formatInv(data) {
+  ensureInv(data);
+  const lines = [];
+  lines.push('IENE: Y' + data.iene);
+  lines.push('');
+  const eq = data.equipment || {};
+  const eqKeys = Object.keys(eq);
+  if (eqKeys.length) {
+    lines.push('Equipado:');
+    eqKeys.forEach(function (s) {
+      const it = getItem(eq[s]);
+      lines.push('  ' + s + ': ' + (it ? it.name : eq[s]));
+    });
+    lines.push('');
+  }
+  const keys = Object.keys(data.inventory);
+  if (!keys.length) lines.push('(inventario vazio)');
+  else {
+    lines.push('Itens:');
+    keys.sort().forEach(function (id) {
+      const it = getItem(id);
+      lines.push('  ' + (it ? it.name : id) + ' [' + id + '] x' + data.inventory[id]);
+    });
+  }
+  return lines.join('\n');
+}
+
+function formatShop(catKey) {
+  const items = listShop(catKey);
+  const title = (SHOP_CATS[catKey] && SHOP_CATS[catKey].title) || 'Geral';
+  let t = 'Loja Isekai - ' + title + '\n\n';
+  if (!items.length) return t + '(vazia)';
+  items.forEach(function (it) {
+    t += '- ' + it.name + ' [' + it.id + ']\n  Y' + it.buy + ' | ' + (it.rarity || '') + '\n';
+  });
+  t += '\nComprar: iskcomprar <id> [qtd]';
+  return t;
+}
+
+module.exports = {
+  ensureInv, invCount, addItem, removeItem,
+  buy, sell, equip, unequip, applyEquipBonuses,
+  craft, applyLoot, formatInv, formatShop,
+  MAX_BUY_QTY, INV_SOFT_CAP
+};

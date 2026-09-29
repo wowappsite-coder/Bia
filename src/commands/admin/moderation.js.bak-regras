@@ -1,0 +1,509 @@
+const { tag } = require('../../utils/mention');
+/**
+ * Comandos de administração de grupo
+ */
+
+const db = require('../../database');
+
+async function requireGroupAdmin(ctx) {
+  if (!ctx.isGroup) {
+    await ctx.reply('❌ Apenas em grupos.');
+    return false;
+  }
+  const isAdmin = await ctx.isGroupAdmin() || ctx.isOwner() || ctx.isBotAdmin();
+  if (!isAdmin) {
+    await ctx.reply('❌ Apenas administradores.');
+    return false;
+  }
+  return true;
+}
+
+async function getTargetUser(ctx) {
+  const target = ctx.getMentionedOrQuoted();
+  if (!target) {
+    await ctx.reply('❌ Marque ou responda a mensagem do usuário.');
+    return null;
+  }
+  return target;
+}
+
+const BAN_SUCCESS_MSGS = ["🚨 @usuario não tankou NADA e foi de base chorando 😂 BAN!", "💀 @usuario morreu no social. Banido e sem funeral.", "🛫 Passagem só de ida: @usuario foi expulso como lixo reciclável 😂", "🚪 @usuario achou que mandava... a porta mandou ele embora. BAN!", "🔨 Martelo da vergonha esmagou @usuario. Até o eco riu.", "📦 Empacotamos @usuario com fita de inútil e mandamos embora 😂", "⛔ @usuario ultrapassou o limite da paciência. Lixo fora.", "😂 @usuario tentou ser protagonista e virou meme do BAN.", "💨 @usuario evaporou. Nem falta faz, sinceramente.", "🏁 Game Over, noob. @usuario foi deletado do servidor.", "🎪 Show de ridículo encerrado: @usuario caiu do palco. BAN!", "🧹 Varremos @usuario com o resto da sujeira do grupo.", "📵 @usuario ficou sem sinal... e sem grupo. Merecido.", "🧱 @usuario bateu de cara na realidade: ninguém te quer aqui.", "🎯 Alvo fácil. @usuario era previsível demais pro BAN.", "🧊 Congelamos @usuario fora. Descongela na rua.", "📌 Fixado na história: @usuario é o exemplo do que NÃO ser.", "🧨 @usuario se explodiu sozinho. A gente só limpou os restos.", "🧾 Nota fiscal: 1 BAN + humilhação grátis pra @usuario.", "🕶️ Remoção cirúrgica. @usuario nem viu a vergonha chegar.", "📉 Reputação de @usuario: falência total. BAN liquidou tudo.", "🎮 Report aceito. Conta de @usuario banida por ser insuportável.", "🛎️ Express: @usuario na calçada em 0.2s. Boa sorte lá fora.", "📛 Etiqueta: FRACASSADO. Nome: @usuario. Destino: BAN.", "🧲 A mediocridade de @usuario atraiu o BAN automático.", "🧱 Tijolada virtual na cara de @usuario. Acordou? Tarde demais.", "🎬 Corte final. @usuario foi o pior ator desse grupo. BAN!", "🧯 Apagamos a existência de @usuario daqui. Ficou mais limpo.", "🧺 Cesta de eliminados: @usuario em primeiro lugar, de novo.", "👑 A staff decretou: @usuario é persona non grata. SUMIU."];
+const KICK_SUCCESS_MSGS = ["👢 @usuario levou o chute mais motivado do mês. Fora 😂", "🚪 Empurramos @usuario com carinho... e com o pé.", "📦 @usuario foi no lixo seco. Até a próxima, problema.", "💨 @usuario voou mais rápido que a dignidade dele.", "🏃 @usuario nem correu: a vergonha já tinha saído na frente. KICK!", "👋 Foi bom? Não. Mas @usuario já era. Tchau.", "🎫 Passe de @usuario: invalidado por excesso de vergonha alheia.", "🚨 Remoção: @usuario. Motivo extra: ninguém sentiu falta.", "😂 Fiscalização riu na cara de @usuario e deu KICK.", "🚪 Porta abriu, @usuario caiu, porta fechou. Clássico.", "🛵 Delivery de vexame: @usuario entregue fora, quentinho.", "🧹 Varrido. @usuario era só poeira com opinião.", "⏱️ Tempo de @usuario esgotou. E a paciência do grupo também.", "🎒 Mochila, vergonha e KICK. @usuario no combo completo.", "🪧 Não mora mais aqui: @usuario foi despejado do convívio.", "🚶 Caminhada da vergonha até a saída. Tchau, @usuario.", "🎛️ EJECT em @usuario. Até o bot sentiu alívio.", "🫧 Bolha de ridículo: @usuario estourou pra fora do grupo.", "📎 Desanexado. @usuario era o anexo inútil da conversa.", "🛎️ Checkout: @usuario. Avaliação: 0 estrelas. Não volte.", "🌪️ Furacão da moderação. @usuario foi o primeiro detrito.", "🧴 Limpeza profunda: tiramos @usuario e o clima melhorou.", "🎁 Presente pro grupo: KICK em @usuario. Todo mundo agradece.", "🪙 Cara = fica. Coroa = @usuario fora. Deu coroa 😂", "📍 Localização de @usuario: irrelevante. Já era.", "🧃 Suco de humilhação gelado. @usuario bebeu até a última gota.", "🪄 Pó de sumiço. @usuario? Que @usuario?", "🪙 Fichas zeradas. @usuario quebre a banca noutro lugar.", "📣 Atenção: @usuario foi expulso e o grupo agradeceu em silêncio.", "🧩 Peça errada do quebra-cabeça. @usuario removido. Encaixou melhor."];
+function pickMsg(arr){return arr[Math.floor(Math.random()*arr.length)];}
+function banKickReason(ctx){try{return (ctx.args||[]).filter(function(a){return String(a).indexOf('@')===-1;}).join(' ').trim();}catch(_){return '';}}
+function formatBanKickMsg(ctx,target,kind){const pool=kind==='kick'?KICK_SUCCESS_MSGS:BAN_SUCCESS_MSGS;let msg=pickMsg(pool).split('@usuario').join(tag(target));const reason=banKickReason(ctx);if(reason)msg+='\n📝 Motivo: *'+reason+'*';return msg;}
+
+module.exports = [
+  {
+    name: 'ban',
+    aliases: ['kick', 'expulsar'],
+    category: 'admin',
+    description: 'Remove usuário do grupo',
+    groupOnly: true,
+    adminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      const target = await getTargetUser(ctx);
+      if (!target) return;
+      try {
+        await ctx.sock.groupParticipantsUpdate(ctx.jid, [target], 'remove');
+        const used = String((ctx.command || (ctx.parsed && ctx.parsed.command) || 'ban')).toLowerCase();
+        const kind = (used === 'kick' || used === 'expulsar' || used === 'remover' || used === 'remove') ? 'kick' : 'ban';
+        await ctx.reply(formatBanKickMsg(ctx, target, kind), { mentions: [target] });
+      } catch (e) {
+        await ctx.reply('❌ Não foi possível remover. Verifique se o bot é admin.');
+      }
+    }
+  },
+  {
+    name: 'promover',
+    aliases: ['promote', 'promove'],
+    category: 'admin',
+    description: 'Promove a administrador',
+    groupOnly: true,
+    adminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      const target = await getTargetUser(ctx);
+      if (!target) return;
+      try {
+        await ctx.sock.groupParticipantsUpdate(ctx.jid, [target], 'promote');
+        await ctx.reply('✅ Usuário promovido a admin.', { mentions: [target] });
+      } catch {
+        await ctx.reply('❌ Falha ao promover.');
+      }
+    }
+  },
+  {
+    name: 'rebaixar',
+    aliases: ['demote'],
+    category: 'admin',
+    description: 'Remove admin do usuário',
+    groupOnly: true,
+    adminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      const target = await getTargetUser(ctx);
+      if (!target) return;
+      try {
+        await ctx.sock.groupParticipantsUpdate(ctx.jid, [target], 'demote');
+        await ctx.reply('✅ Usuário rebaixado.', { mentions: [target] });
+      } catch {
+        await ctx.reply('❌ Falha ao rebaixar.');
+      }
+    }
+  },
+  {
+    name: 'add',
+    aliases: ['adicionar'],
+    category: 'admin',
+    description: 'Adiciona número ao grupo',
+    groupOnly: true,
+    adminOnly: true,
+    usage: '!add 2588xxxxxxx',
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      let num = (ctx.args[0] || '').replace(/\D/g, '');
+      if (num.length < 9) return ctx.reply('❌ Número inválido.');
+      if (!num.startsWith('258')) num = '258' + num;
+      const jid = num + '@s.whatsapp.net';
+      try {
+        await ctx.sock.groupParticipantsUpdate(ctx.jid, [jid], 'add');
+        await ctx.reply('✅ Convite enviado/adicionado.');
+      } catch {
+        await ctx.reply('❌ Não foi possível adicionar.');
+      }
+    }
+  },
+  {
+    name: 'remover',
+    aliases: ['remove'],
+    category: 'admin',
+    description: 'Remove usuário do grupo',
+    groupOnly: true,
+    adminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      const target = await getTargetUser(ctx);
+      if (!target) return;
+      try {
+        await ctx.sock.groupParticipantsUpdate(ctx.jid, [target], 'remove');
+        const used = String((ctx.command || (ctx.parsed && ctx.parsed.command) || 'ban')).toLowerCase();
+        const kind = (used === 'kick' || used === 'expulsar' || used === 'remover' || used === 'remove') ? 'kick' : 'ban';
+        await ctx.reply(formatBanKickMsg(ctx, target, kind), { mentions: [target] });
+      } catch (e) {
+        await ctx.reply('❌ Não foi possível remover. Verifique se o bot é admin.');
+      }
+    }
+  },
+  {
+    name: 'mute',
+    aliases: ['mutar', 'silenciar'],
+    category: 'admin',
+    description: 'Muta usuario: o bot apaga as mensagens dele no grupo',
+    groupOnly: true,
+    adminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      const target = await getTargetUser(ctx);
+      if (!target) return;
+      const g = ctx.group;
+      let mutados = [];
+      try { mutados = JSON.parse(g.mutados || '[]'); } catch {}
+      function addMuteId(arr, id) {
+        if (!id) return;
+        if (!arr.includes(id)) arr.push(id);
+      }
+      addMuteId(mutados, target);
+      // se a mensagem citada tiver participant alternativo
+      try {
+        const q = ctx.msg && ctx.msg.message && (
+          (ctx.msg.message.extendedTextMessage && ctx.msg.message.extendedTextMessage.contextInfo) ||
+          (ctx.msg.message.imageMessage && ctx.msg.message.imageMessage.contextInfo)
+        );
+        if (q && q.participant) addMuteId(mutados, q.participant);
+        if (q && q.participantPn) addMuteId(mutados, q.participantPn);
+      } catch (_) {}
+      db.updateGroup(ctx.jid, { mutados: JSON.stringify(mutados) });
+      await ctx.reply('🔇 Usuário mutado.\nO bot vai *apagar* as mensagens dele neste grupo.\n_(O bot precisa ser admin)_', { mentions: [target] });
+    }
+  },
+  {
+    name: 'desmute',
+    aliases: ['desmutar', 'unmute'],
+    category: 'admin',
+    description: 'Desmuta usuário',
+    groupOnly: true,
+    adminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      const target = await getTargetUser(ctx);
+      if (!target) return;
+      const g = ctx.group;
+      let mutados = [];
+      try { mutados = JSON.parse(g.mutados || '[]'); } catch {}
+      const dig = String(target).split('@')[0].split(':')[0].replace(/\D/g, '');
+      mutados = mutados.filter(function (j) {
+        if (j === target) return false;
+        const d = String(j).split('@')[0].split(':')[0].replace(/\D/g, '');
+        if (dig && d && (d === dig || d.endsWith(dig) || dig.endsWith(d))) return false;
+        return true;
+      });
+      db.updateGroup(ctx.jid, { mutados: JSON.stringify(mutados) });
+      await ctx.reply('🔊 Usuário desmutado.', { mentions: [target] });
+    }
+  },
+  {
+    name: 'mutelist',
+    aliases: ['listamute', 'mutados'],
+    category: 'admin',
+    description: 'Lista mutados',
+    groupOnly: true,
+    adminOnly: true,
+    handler: async (ctx) => {
+      const g = ctx.group;
+      let mutados = [];
+      try { mutados = JSON.parse(g.mutados || '[]'); } catch {}
+      if (!mutados.length) return ctx.reply('📋 Nenhum usuário mutado.');
+      let text = '🔇 *Mutados*\n\n';
+      mutados.forEach((j, i) => { text += `${i + 1}. ${j.replace('@s.whatsapp.net', '')}\n`; });
+      await ctx.reply(text);
+    }
+  },
+  {
+    name: 'linkgp',
+    aliases: ['link', 'grupolink', 'invite'],
+    category: 'admin',
+    description: 'Obtém link do grupo',
+    groupOnly: true,
+    adminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      try {
+        const code = await ctx.sock.groupInviteCode(ctx.jid);
+        await ctx.reply(`🔗 Link do grupo:\nhttps://chat.whatsapp.com/${code}`);
+      } catch {
+        await ctx.reply('❌ Não foi possível obter o link. Bot precisa ser admin.');
+      }
+    }
+  },
+  {
+    name: 'revlinkgp',
+    aliases: ['resetlink', 'revogarlink'],
+    category: 'admin',
+    description: 'Revoga link do grupo',
+    groupOnly: true,
+    adminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      try {
+        await ctx.sock.groupRevokeInvite(ctx.jid);
+        await ctx.reply('✅ Link do grupo revogado.');
+      } catch {
+        await ctx.reply('❌ Falha ao revogar link.');
+      }
+    }
+  },
+  {
+    name: 'nomegp',
+    aliases: ['setname', 'nomegrupo'],
+    category: 'admin',
+    description: 'Altera nome do grupo',
+    groupOnly: true,
+    adminOnly: true,
+    usage: '!nomegp Novo Nome',
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      if (!ctx.text) return ctx.reply('❌ Informe o novo nome.');
+      try {
+        await ctx.sock.groupUpdateSubject(ctx.jid, ctx.text);
+        await ctx.reply('✅ Nome do grupo alterado.');
+      } catch {
+        await ctx.reply('❌ Falha ao alterar nome.');
+      }
+    }
+  },
+  {
+    name: 'descgp',
+    aliases: ['setdesc', 'descricao'],
+    category: 'admin',
+    description: 'Altera descrição do grupo',
+    groupOnly: true,
+    adminOnly: true,
+    usage: '!descgp Nova descrição',
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      if (!ctx.text) return ctx.reply('❌ Informe a descrição.');
+      try {
+        await ctx.sock.groupUpdateDescription(ctx.jid, ctx.text);
+        await ctx.reply('✅ Descrição alterada.');
+      } catch {
+        await ctx.reply('❌ Falha ao alterar descrição.');
+      }
+    }
+  },
+  {
+    name: 'grupoinfo',
+    aliases: ['infogrupo', 'ginfo'],
+    category: 'grupo',
+    description: 'Informações do grupo',
+    groupOnly: true,
+    handler: async (ctx) => {
+      try {
+        const meta = await ctx.getGroupMetadata();
+        if (!meta) return ctx.reply('❌ Não foi possível obter info.');
+        const admins = meta.participants.filter(p => p.admin).length;
+        await ctx.reply(`👥 *Info do Grupo*\n\n📛 Nome: ${meta.subject}\n👤 Participantes: ${meta.participants.length}\n🛡️ Admins: ${admins}\n📅 Criado: ${meta.creation ? new Date(meta.creation * 1000).toLocaleDateString() : '?'}\n📝 Desc: ${(meta.desc || 'Sem descrição').slice(0, 200)}`);
+      } catch {
+        await ctx.reply('❌ Erro ao obter informações.');
+      }
+    }
+  },
+  {
+    name: 'admins',
+    aliases: ['listadmins', 'adminlist'],
+    category: 'grupo',
+    description: 'Lista administradores do grupo',
+    groupOnly: true,
+    handler: async (ctx) => {
+      try {
+        const meta = await ctx.getGroupMetadata();
+        const admins = meta.participants.filter(p => p.admin);
+        let text = '🛡️ *Administradores*\n\n';
+        admins.forEach((a, i) => {
+          text += `${i + 1}. @${a.id.replace('@s.whatsapp.net', '')}\n`;
+        });
+        await ctx.reply(text, { mentions: admins.map(a => a.id) });
+      } catch {
+        await ctx.reply('❌ Erro.');
+      }
+    }
+  },
+  {
+    name: 'membros',
+    aliases: ['members', 'participantes'],
+    category: 'grupo',
+    description: 'Conta membros do grupo',
+    groupOnly: true,
+    handler: async (ctx) => {
+      try {
+        const meta = await ctx.getGroupMetadata();
+        await ctx.reply(`👥 Total de membros: *${meta.participants.length}*`);
+      } catch {
+        await ctx.reply('❌ Erro.');
+      }
+    }
+  },
+  {
+    name: 'hidetag',
+    aliases: ['htag', 'totag'],
+    category: 'admin',
+    description: 'Marca todos oculto',
+    groupOnly: true,
+    adminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      try {
+        const meta = await ctx.getGroupMetadata();
+        const mentions = meta.participants.map(p => p.id);
+        const text = ctx.text || '📢 Atenção pessoal!';
+        await ctx.sock.sendMessage(ctx.jid, { text, mentions });
+      } catch {
+        await ctx.reply('❌ Erro ao marcar.');
+      }
+    }
+  },
+  {
+    name: 'marcar',
+    aliases: ['tagall', 'todos'],
+    category: 'admin',
+    description: 'Marca todos com lista',
+    groupOnly: true,
+    adminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      try {
+        const meta = await ctx.getGroupMetadata();
+        let text = (ctx.text || '📢 Marcação geral') + '\n\n';
+        const mentions = [];
+        meta.participants.forEach((p, i) => {
+          text += `${i + 1}. @${p.id.split('@')[0]}\n`;
+          mentions.push(p.id);
+        });
+        await ctx.sock.sendMessage(ctx.jid, { text, mentions });
+      } catch {
+        await ctx.reply('❌ Erro.');
+      }
+    }
+  },
+  {
+    name: 'marcar2',
+    aliases: ['tag'],
+    category: 'admin',
+    description: 'Marca todos (versão curta)',
+    groupOnly: true,
+    adminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      try {
+        const meta = await ctx.getGroupMetadata();
+        const mentions = meta.participants.map(p => p.id);
+        await ctx.sock.sendMessage(ctx.jid, {
+          text: ctx.text || '🔔',
+          mentions
+        });
+      } catch {
+        await ctx.reply('❌ Erro.');
+      }
+    }
+  },
+  {
+    name: 'regras',
+    aliases: ['rules'],
+    category: 'grupo',
+    description: 'Mostra regras do grupo',
+    groupOnly: true,
+    handler: async (ctx) => {
+      const g = ctx.group;
+      await ctx.reply(g.regras || '📋 Nenhuma regra definida. Admins podem usar !setregras');
+    }
+  },
+  {
+    name: 'setregras',
+    aliases: ['defineregras'],
+    category: 'admin',
+    description: 'Define regras do grupo',
+    groupOnly: true,
+    adminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      if (!ctx.text) return ctx.reply('❌ Envie as regras após o comando.');
+      db.updateGroup(ctx.jid, { regras: ctx.text });
+      await ctx.reply('✅ Regras atualizadas.');
+    }
+  },
+  {
+    name: 'bemvindo',
+    aliases: ['welcome', 'boasvindas'],
+    category: 'admin',
+    description: 'Ativa/desativa boas-vindas',
+    groupOnly: true,
+    adminOnly: true,
+    usage: '!bemvindo on/off',
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      const arg = (ctx.args[0] || '').toLowerCase();
+      if (arg === 'on' || arg === 'ativar') {
+        db.updateGroup(ctx.jid, { welcome: 1 });
+        await ctx.reply('✅ Boas-vindas ativadas.');
+      } else if (arg === 'off' || arg === 'desativar') {
+        db.updateGroup(ctx.jid, { welcome: 0 });
+        await ctx.reply('✅ Boas-vindas desativadas.');
+      } else {
+        const g = ctx.group;
+        await ctx.reply(`📬 Boas-vindas: ${g.welcome ? 'ATIVADO' : 'DESATIVADO'}\nUse !bemvindo on/off`);
+      }
+    }
+  },
+  {
+    name: 'saida',
+    aliases: ['goodbye', 'adeus'],
+    category: 'admin',
+    description: 'Ativa/desativa mensagem de saída',
+    groupOnly: true,
+    adminOnly: true,
+    usage: '!saida on/off',
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      const arg = (ctx.args[0] || '').toLowerCase();
+      if (arg === 'on') {
+        db.updateGroup(ctx.jid, { goodbye: 1 });
+        await ctx.reply('✅ Mensagem de saída ativada.');
+      } else if (arg === 'off') {
+        db.updateGroup(ctx.jid, { goodbye: 0 });
+        await ctx.reply('✅ Mensagem de saída desativada.');
+      } else {
+        const g = ctx.group;
+        await ctx.reply(`👋 Saída: ${g.goodbye ? 'ATIVADO' : 'DESATIVADO'}`);
+      }
+    }
+  },
+  {
+    name: 'abrirgrupo',
+    aliases: ['open', 'opengp', 'grupoabrir', 'abrir'],
+    category: 'admin',
+    description: 'Abre o grupo (todos podem enviar mensagens)',
+    groupOnly: true,
+    adminOnly: true,
+    botAdminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      try {
+        await ctx.sock.groupSettingUpdate(ctx.jid, 'not_announcement');
+        await ctx.reply('🔓 *Grupo aberto!*\nTodos os membros podem enviar mensagens.');
+      } catch (e) {
+        console.error('abrirgrupo', e.message);
+        await ctx.reply('❌ Não consegui abrir o grupo.\nO bot precisa ser *admin* do grupo.');
+      }
+    }
+  },
+  {
+    name: 'fechargrupo',
+    aliases: ['close', 'closegp', 'grupofechar', 'fechar'],
+    category: 'admin',
+    description: 'Fecha o grupo (só admins enviam mensagens)',
+    groupOnly: true,
+    adminOnly: true,
+    botAdminOnly: true,
+    handler: async (ctx) => {
+      if (!(await requireGroupAdmin(ctx))) return;
+      try {
+        await ctx.sock.groupSettingUpdate(ctx.jid, 'announcement');
+        await ctx.reply('🔒 *Grupo fechado!*\nApenas administradores podem enviar mensagens.');
+      } catch (e) {
+        console.error('fechargrupo', e.message);
+        await ctx.reply('❌ Não consegui fechar o grupo.\nO bot precisa ser *admin* do grupo.');
+      }
+    }
+  }
+];

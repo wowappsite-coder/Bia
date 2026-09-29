@@ -181,14 +181,12 @@ async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(config.sessionPath);
   const { version } = await fetchLatestBaileysVersion();
 
+  const authStrategy = new (require('@whiskeysockets/baileys').PairingCodeAuthState)();
+
   const sock = makeWASocket({
     version,
-    auth: {
-      creds: state.creds,
-      keys: makeCacheableSignalKeyStore(state.keys, logger)
-    },
+    auth: authStrategy,
     printQRInTerminal: false,
-    usePairingCode: true,
     logger: pino({ level: 'silent' }),
     generateHighQualityLinkPreview: false,
     syncFullHistory: false,
@@ -196,25 +194,36 @@ async function startBot() {
     getMessage: async () => undefined
   });
 
-  botStarting = false;
-  botSocketActive = true;
-
-  beatrizWrapSockSend(sock);
-
-  try { sendQueue.wrapSocket(sock); } catch (e) { console.error('[SEC QUEUE] wrap', e && e.message); }
-
   sock.ev.on('creds.update', async (creds) => {
     console.log('[CREDS UPDATE] registered=', creds.registered, 'me=', creds.me?.id || 'sem-me');
     await saveCreds(creds);
   });
 
+  // Pairing code keep-alive: re-print while connecting so it stays visible longer
+  let pairingKeepAliveTimer = null;
+  function startPairingKeepAlive(qrCode) {
+    if (pairingKeepAliveTimer) clearInterval(pairingKeepAliveTimer);
+    console.log('\n🔗 Escaneie o pairing code abaixo (ele se atualiza se nada responder):\n');
+    console.log(qrCode);
+    pairingKeepAliveTimer = setInterval(() => {
+      console.log('\n🔗 Refazendo pairing code (ainda pendente):\n');
+      console.log(qrCode);
+    }, 15000);
+  }
+  function stopPairingKeepAlive() {
+    if (pairingKeepAliveTimer) {
+      clearInterval(pairingKeepAliveTimer);
+      pairingKeepAliveTimer = null;
+    }
+  }
+
   sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr } = update;
-    if (qr) {
-      console.log('\n📱 Escaneie o QR Code:\n');
-      qrcode.generate(qr, { small: true });
+    const { connection, lastDisconnect, qr, connectionId } = update;
+    if ((connectionId && connection === 'connecting' && typeof qr === 'string') || (qr && typeof qr === 'string' && connection === 'connecting')) {
+      startPairingKeepAlive(qr);
     }
     if (connection === 'open') {
+      stopPairingKeepAlive();
       // BEATRIZ_STABLE_V1
       global.BOT_READY_AT = Date.now();
       global.BOT_RECONNECT_COUNT = 0;
@@ -232,6 +241,7 @@ async function startBot() {
       } catch (_) {}
     }
     if (connection === 'close') {
+      stopPairingKeepAlive();
       botSocketActive = false;
       botStarting = false;
 

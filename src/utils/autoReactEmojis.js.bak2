@@ -1,5 +1,0 @@
-/** Reacoes automaticas — lista reduzida */
-module.exports = [
-  '❤️', '🌸', '🌼', '🌹', '🤍', '💜', '💙', '🫦', '👄',
-  '❤️‍🩹', '🍮', '🤎', '💚', '💛', '🧡'
-];

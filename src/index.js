@@ -201,21 +201,26 @@ async function startBot() {
   if (!state.creds.registered) {
     setTimeout(async () => {
       try {
-        const pairingNumber = '258' + String(config.botNumber || '').replace(/\D/g, '').replace(/^258/, '');
+        const configuredNumber = String(config.botNumber || '').replace(/\D/g, '');
+        const pairingNumber = configuredNumber.startsWith('258')
+          ? configuredNumber
+          : `258${configuredNumber}`;
 
-        if (!pairingNumber) {
-          console.error('[PAIRING] BOT_NUMBER não configurado.');
+        if (!/^258\d{9}$/.test(pairingNumber)) {
+          console.error('[PAIRING] BOT_NUMBER inválido. Use 9 dígitos locais ou o número completo com 258.');
           return;
         }
 
-        const code = await sock.requestPairingCode(pairingNumber, 'BIA2026X');
+        const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        const customCode = Array.from({ length: 8 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+        const code = await sock.requestPairingCode(pairingNumber, customCode);
         console.log('\n🔐 CÓDIGO DE PAREAMENTO: ' + code);
         console.log('📱 WhatsApp > Dispositivos conectados > Conectar dispositivo > Conectar com número de telefone');
         console.log('⏳ Use este código para vincular a Bia.\n');
       } catch (e) {
         console.error('[PAIRING] Erro ao gerar código:', e?.message || e);
       }
-    }, 3000);
+    }, 5000);
   }
 
   beatrizWrapSockSend(sock);

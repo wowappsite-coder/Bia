@@ -1,0 +1,123 @@
+function getPrefix(ctx) {
+  return (ctx && ctx.prefix != null && String(ctx.prefix).length) ? String(ctx.prefix) : '!';
+}
+
+function buildClassic(p) {
+  return (
+    '╭──〔 📥 𝐌𝐄𝐍𝐔 𝐃𝐎𝐖𝐍𝐋𝐎𝐀𝐃 〕──╮\n' +
+    '│\n' +
+    '├─〔 🔍 𝐏𝐄𝐒𝐐𝐔𝐈𝐒𝐀 〕\n' +
+    '│  ' + p + 'yt — pesquisar YouTube\n' +
+    '│  ' + p + 'play — pesquisar/tocar\n' +
+    '│  ' + p + 'spotify — Spotify\n' +
+    '│  ' + p + 'ytplay — tocar YT (audio+capa)\n' +
+    '│  ' + p + 'ytplay2 — YT em documento MP3\n' +
+    '│\n' +
+    '├─〔 ⬇️ 𝐘𝐎𝐔𝐓𝐔𝐁𝐄 〕\n' +
+    '│  ' + p + 'ytd — baixar video\n' +
+    '│  ' + p + 'yta — baixar audio\n' +
+    '│  ' + p + 'vta — video → audio\n' +
+    '│\n' +
+    '├─〔 📱 𝐑𝐄𝐃𝐄𝐒 〕\n' +
+    '│  ' + p + 'tk — TikTok\n' +
+    '│  ' + p + 'ig — Instagram\n' +
+    '│  ' + p + 'fb — Facebook\n' +
+    '│  ' + p + 'kw — Kwai\n' +
+    '│  ' + p + 'pin — Pinterest (link)\n' +
+    '│  ' + p + 'pint — Pinterest (pesquisa)\n' +
+    '│  ' + p + 'vk — VK\n' +
+    '│  ' + p + 'twitter — X/Twitter\n' +
+    '│  ' + p + 'twitch — Twitch\n' +
+    '│  ' + p + 'reddit — Reddit\n' +
+    '│  ' + p + 'vimeo — Vimeo\n' +
+    '│  ' + p + 'rumble — Rumble\n' +
+    '│  ' + p + 'dailymotion — Dailymotion\n' +
+    '│  ' + p + 'bilibili — Bilibili\n' +
+    '│\n' +
+    '├─〔 📦 𝐀𝐑𝐐𝐔𝐈𝐕𝐎𝐒 〕\n' +
+    '│  ' + p + 'multidl — multi download\n' +
+    '│  ' + p + 'mediafire — MediaFire\n' +
+    '│  ' + p + 'gdrive — Google Drive\n' +
+    '│  ' + p + 'capcut — CapCut\n' +
+    '│  ' + p + 'fdroid — F-Droid\n' +
+    '│  ' + p + 'gerarlink — link publico\n' +
+    '│\n' +
+    '├─〔 🎤 𝐀𝐔𝐃𝐈𝐎 〕\n' +
+    '│  ' + p + 'crad — criar audio (TTS)\n' +
+    '│  ' + p + 'criaraudio — mesmo que crad\n' +
+    '│\n' +
+    '╰──〔 𝐁𝐄𝐀𝐓𝐑𝐈𝐙 𝐁𝐎𝐓 〕──╯'
+  );
+}
+
+function buildFancy(p) {
+  const o = 'ঔৣֳ̤᷈͜͝͡🔮';
+  return (
+    '*╔═══━─❦ۜ✯ۣۜৡ ✧ ❖ ✧ ৡۣۜ✯ۜ─━━═╗*\n' +
+    '*║*  *╭━━✯ ❖ 𝐌𝐄𝐍𝐔 𝐃𝐎𝐖𝐍𝐋𝐎𝐀𝐃 ❖ ✯━━╮*\n' +
+    '*║*  *│*\n' +
+    '*║*  *│  ঔৣֳ̤᷈͜͝͡📥 𝐃𝐎𝐖𝐍𝐋𝐎𝐀𝐃*\n' +
+    '*║*  *│*\n' +
+    '*║*  *├─ 🔍 𝐏𝐄𝐒𝐐𝐔𝐈𝐒𝐀*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'yt*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'play*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'spotify*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'ytplay*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'ytplay2*\n' +
+    '*║*  *│*\n' +
+    '*║*  *├─ ▶️ 𝐘𝐎𝐔𝐓𝐔𝐁𝐄*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'ytd*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'yta*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'vta*\n' +
+    '*║*  *│*\n' +
+    '*║*  *├─ 📱 𝐑𝐄𝐃𝐄𝐒*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'tk*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'ig*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'fb*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'kw*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'pin*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'pint*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'vk*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'twitter*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'twitch*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'reddit*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'vimeo*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'rumble*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'dailymotion*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'bilibili*\n' +
+    '*║*  *│*\n' +
+    '*║*  *├─ 📦 𝐀𝐑𝐐𝐔𝐈𝐕𝐎𝐒*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'multidl*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'mediafire*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'gdrive*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'capcut*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'fdroid*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'gerarlink*\n' +
+    '*║*  *│*\n' +
+    '*║*  *├─ 🎤 𝐀𝐔𝐃𝐈𝐎*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'crad*\n' +
+    '*║*  *│  ' + o + ' ' + p + 'criaraudio*\n' +
+    '*║*  *│*\n' +
+    '*║*  *╰━━━ঔৣ͡➳ ✦ ❖ ✦ ➳ঔৣ͡━━━╯*\n' +
+    '*╚══━━❦ۜ✯ۣۜৡ ✧ ❖ ✧ ৡۣۜ✯ۜ─━━══╝*'
+  );
+}
+
+module.exports = {
+  name: 'menudownload',
+  aliases: ['menudl', 'menubaixar', 'downloadmenu', 'menudown', 'menu-download', 'menu_download', 'downloads'],
+  category: 'utilidades',
+  description: 'Menu de downloads',
+  async handler(ctx) {
+    const p = getPrefix(ctx);
+    const useFancy = ctx && String(ctx.prefix || '') === '!';
+    const text = useFancy ? buildFancy(p) : buildClassic(p);
+    try {
+      if (typeof ctx.reply === 'function') return await ctx.reply(text);
+      const jid = ctx.jid || ctx.chatId || (ctx.msg && ctx.msg.key && ctx.msg.key.remoteJid);
+      if (ctx.sock && jid) return await ctx.sock.sendMessage(jid, { text });
+    } catch (_) {
+      try { return await ctx.reply(text); } catch (_) {}
+    }
+  }
+};

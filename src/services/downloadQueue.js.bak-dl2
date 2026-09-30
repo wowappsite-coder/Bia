@@ -1,0 +1,188 @@
+/**
+ * Fila global de download + cancelamento + bloqueio global/grupo
+ */
+const fs = require('fs');
+const path = require('path');
+
+const queue = [];
+let busy = false;
+let current = null;
+let cancelFlag = false;
+
+const BLOCK_FILE = path.join(__dirname, '../../data/download-blocks.json');
+
+function loadBlocks() {
+  try {
+    if (fs.existsSync(BLOCK_FILE)) {
+      return JSON.parse(fs.readFileSync(BLOCK_FILE, 'utf8'));
+    }
+  } catch (_) {}
+  return { global: false, groups: {}, allow: {} };
+}
+
+function saveBlocks(data) {
+  try {
+    fs.mkdirSync(path.dirname(BLOCK_FILE), { recursive: true });
+    fs.writeFileSync(BLOCK_FILE, JSON.stringify(data, null, 2));
+  } catch (e) {
+    console.error('[dwd-block] save', e.message);
+  }
+}
+
+/** true = downloads bloqueados neste jid de grupo */
+function isDownloadBlocked(groupJid) {
+  const b = loadBlocks();
+  const g = String(groupJid || '');
+  // allowlist de grupo sobrepoe bloqueio global
+  if (g && b.allow && b.allow[g]) return false;
+  if (b.global) return true;
+  if (g && b.groups && b.groups[g]) return true;
+  return false;
+}
+
+function setGlobalBlock(on) {
+  const b = loadBlocks();
+  b.global = !!on;
+  if (on) {
+    // ao bloquear global, limpa allows antigas? nao — owner decide por grupo
+  } else {
+    // desbloqueio global: limpa allowlist (ja nao precisa)
+    b.allow = {};
+  }
+  saveBlocks(b);
+  return b;
+}
+
+function setGroupBlock(groupJid, on) {
+  const b = loadBlocks();
+  const g = String(groupJid || '');
+  if (!g) return b;
+  if (!b.groups) b.groups = {};
+  if (!b.allow) b.allow = {};
+  if (on) {
+    b.groups[g] = true;
+    delete b.allow[g];
+  } else {
+    delete b.groups[g];
+    // se global ativo, unblock so neste grupo = allowlist
+    if (b.global) b.allow[g] = true;
+  }
+  saveBlocks(b);
+  return b;
+}
+
+function getBlockStatus(groupJid) {
+  const b = loadBlocks();
+  const g = String(groupJid || '');
+  return {
+    global: !!b.global,
+    group: !!(b.groups && b.groups[g]),
+    allowed: !!(b.allow && b.allow[g]),
+    blocked: isDownloadBlocked(g)
+  };
+}
+
+function isBusy() {
+  return busy;
+}
+
+function statusText() {
+  if (!busy) return null;
+  return {
+    who: current && current.sender ? current.sender : '?',
+    label: current && current.label ? current.label : 'download',
+    waiting: queue.length
+  };
+}
+
+function requestCancel(bySender, isOwner) {
+  if (!busy || !current) {
+    return { ok: false, reason: 'Nao ha download em andamento.' };
+  }
+  if (!isOwner && current.sender && bySender && current.sender !== bySender) {
+    return { ok: false, reason: 'So quem pediu o download (ou o Owner) pode cancelar.' };
+  }
+  cancelFlag = true;
+  return { ok: true, label: current.label || 'download' };
+}
+
+function isCancelled() {
+  return cancelFlag;
+}
+
+function clearCancel() {
+  cancelFlag = false;
+}
+
+function tryAcquire(ctx, label) {
+  const jid = ctx && ctx.jid ? ctx.jid : '';
+  if (isDownloadBlocked(jid)) {
+    return {
+      ok: false,
+      reason:
+        '🚫 *Downloads bloqueados*\n\n' +
+        'Neste chat os downloads estao desativados pelo Owner.\n' +
+        'Comandos: blockdwd / blockdwdg'
+    };
+  }
+  const job = {
+    sender: ctx.sender,
+    jid: jid,
+    label: label || 'download',
+    at: Date.now()
+  };
+  if (!busy) {
+    busy = true;
+    cancelFlag = false;
+    current = job;
+    return { ok: true, queued: false };
+  }
+  return {
+    ok: false,
+    queued: false,
+    reason:
+      '❌ *Download em andamento*\n\n' +
+      'Outro pedido esta a ser processado.\n' +
+      'Espera terminar ou usa *cancelardwd*.\n' +
+      (queue.length ? 'Na espera: ' + queue.length : '')
+  };
+}
+
+function release() {
+  busy = false;
+  current = null;
+  cancelFlag = false;
+}
+
+function withDownloadLock(label, handler) {
+  return async function (ctx) {
+    const acq = tryAcquire(ctx, label);
+    if (!acq.ok) {
+      try {
+        await ctx.reply(acq.reason);
+      } catch (_) {}
+      return;
+    }
+    try {
+      return await handler(ctx);
+    } finally {
+      release();
+    }
+  };
+}
+
+module.exports = {
+  tryAcquire,
+  release,
+  isBusy,
+  statusText,
+  withDownloadLock,
+  requestCancel,
+  isCancelled,
+  clearCancel,
+  isDownloadBlocked,
+  setGlobalBlock,
+  setGroupBlock,
+  getBlockStatus,
+  loadBlocks
+};

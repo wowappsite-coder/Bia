@@ -1,0 +1,60 @@
+/**
+ * Menu Download — midia, audio, pesquisa e downloads
+🎮 Menu WebGames
+ * 🎮 JOGOS WEB
+ */
+module.exports = [
+  {
+    name: 'menudownload',
+    aliases: [
+      'menudl',
+      'menudown',
+      'menu download',
+      'downloads',
+      'menubaixar',
+      'menumidia'
+    ],
+    category: 'utilidades',
+    description: 'Menu de downloads e midia',
+    handler: async (ctx) => {
+      const text =
+        '╭──〔 📥 𝐌𝐄𝐍𝐔 𝐃𝐎𝐖𝐍𝐋𝐎𝐀𝐃 〕──╮\n' +
+        '\n' +
+        '╭──〔 🔍 𝐏𝐄𝐒𝐐𝐔𝐈𝐒𝐀 〕──╮\n' +
+        '◈┃ *yt* — pesquisar YouTube\n' +
+        '◈┃ *play* — pesquisar/tocar música\n' +
+        '◈┃ *spotify* — pesquisar no Spotify\n' +
+        '╰──────────────────╯\n' +
+        '\n' +
+        '╭──〔 ⬇️ 𝐃𝐎𝐖𝐍𝐋𝐎𝐀𝐃 〕──╮\n' +
+        '◈┃ *ytd* — baixar vídeo YouTube\n' +
+        '◈┃ *yta* — baixar áudio YouTube\n' +
+        '◈┃ *tk* — baixar TikTok\n' +
+        '◈┃ *ig* — baixar Instagram\n' +
+        '◈┃ *vta* — vídeo → áudio\n' +
+        '╰──────────────────╯\n' +
+        '\n' +
+        '╭──〔 🎙️ 𝐀́𝐔𝐃𝐈𝐎 / 𝐕𝐎𝐙 〕──╮\n' +
+        '◈┃ *crad* — criar áudio (TTS)\n' +
+        '◈┃ *criaraudio* — mesmo que crad\n' +
+        '╰──────────────────╯\n' +
+        '\n' +
+        '╭──〔 💡 𝐄𝐗𝐄𝐌𝐏𝐋𝐎𝐒 〕──╮\n' +
+        '◈┃ yt EP 1 Naruto\n' +
+        '◈┃ play nome da música\n' +
+        '◈┃ spotify nome da música\n' +
+        '◈┃ yta https://youtu.be/xxx\n' +
+        '◈┃ ytd https://youtu.be/xxx\n' +
+        '◈┃ tk https://tiktok.com/...\n' +
+        '◈┃ ig https://instagram.com/...\n' +
+        '◈┃ crad texto para falar\n' +
+        '◈┃ vta (responde a um vídeo)\n' +
+        '╰──────────────────╯\n' +
+        '\n' +
+        '> 📎 Link no comando ou *responde* a msg\n' +
+        '> 📦 YT download: máx *50MB*\n' +
+        '❀────────────────❀';
+      await ctx.reply(text);
+    }
+  }
+];

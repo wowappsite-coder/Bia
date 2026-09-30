@@ -1,0 +1,252 @@
+const { getDb, getGroupSetting } = require('../database');
+
+const pendingMega = new Map();
+
+function pendingKey(g, s) { return String(g) + '|' + String(s); }
+function setPendingMega(g, s, data) {
+  pendingMega.set(pendingKey(g, s), { ...data, expires: Date.now() + 15 * 60 * 1000 });
+}
+function getPendingMega(g, s) {
+  const d = pendingMega.get(pendingKey(g, s));
+  if (!d) return null;
+  if (Date.now() > d.expires) { pendingMega.delete(pendingKey(g, s)); return null; }
+  return d;
+}
+function clearPendingMega(g, s) { pendingMega.delete(pendingKey(g, s)); }
+
+function normalizeMz(num) {
+  if (!num) return null;
+  let d = String(num).replace(/\D/g, '');
+  if (d.startsWith('258') && d.length >= 11) d = d.slice(3);
+  if (d.length >= 8 && d.length <= 12) return d;
+  return null;
+}
+function sameNumber(a, b) {
+  const na = normalizeMz(a), nb = normalizeMz(b);
+  if (!na || !nb) return false;
+  return na === nb || na.endsWith(nb.slice(-9)) || nb.endsWith(na.slice(-9));
+}
+function isValidMegaNumber(num) {
+  const n = normalizeMz(num);
+  return !!(n && /^8[45]\d{7}$/.test(n));
+}
+function parseTxDate(dateStr, timeStr) {
+  if (!dateStr) return null;
+  const m = String(dateStr).match(/(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (!m) return null;
+  let y = parseInt(m[3], 10); if (y < 100) y += 2000;
+  let h = 12, mi = 0;
+  if (timeStr) {
+    const t = String(timeStr).match(/(\d{1,2}):(\d{2})/);
+    if (t) { h = parseInt(t[1], 10); mi = parseInt(t[2], 10); }
+  }
+  const dt = new Date(y, parseInt(m[2], 10) - 1, parseInt(m[1], 10), h, mi);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+function formatMoney(v) {
+  if (v == null || isNaN(v)) return '?';
+  return Number(v).toFixed(2).replace('.', ',') + ' MT';
+}
+function provLabel(p) {
+  return { mpesa: 'M-Pesa', emola: 'E-Mola', mkash: 'M-Kash' }[p] || p || 'Desconhecida';
+}
+
+function savePayment(database, row) {
+  try {
+    const info = database.prepare(`
+      INSERT INTO payments (
+        order_id, transaction_id, provider, value_received, fee,
+        destination_number, destination_name, date, time, raw_message, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      row.orderId, row.transactionId || null, row.provider || null,
+      row.value != null ? row.value : null, row.fee != null ? row.fee : null,
+      row.destinationNumber || null, row.destinationName || null,
+      row.date || null, row.time || null, row.raw || null, row.status
+    );
+    return database.prepare('SELECT * FROM payments WHERE id = ?').get(info.lastInsertRowid);
+  } catch (e) {
+    console.error('[payment] save', e.message);
+    return null;
+  }
+}
+
+function analyzePayment(paymentData, senderJid, groupJid) {
+  const database = getDb();
+  const {
+    transactionId, value, fee, destinationNumber, destinationName,
+    provider, date, time, raw
+  } = paymentData;
+
+  const authNumber = groupJid ? (getGroupSetting(groupJid, 'payment_number', '') || '') : '';
+  const authName = groupJid ? (getGroupSetting(groupJid, 'payment_name', '') || '') : '';
+
+  if (transactionId) {
+    const existing = database.prepare('SELECT * FROM payments WHERE transaction_id = ?').get(transactionId);
+    if (existing) {
+      return {
+        confidence: 'RED', status: 'PAGAMENTO_JA_UTILIZADO',
+        reason: 'txid_duplicado', payment: existing, order: null, authNumber, authName
+      };
+    }
+  }
+
+  if (!transactionId && (value == null || isNaN(value))) {
+    return {
+      confidence: 'RED', status: 'PAGAMENTO_INVALIDO',
+      reason: 'dados_insuficientes', payment: null, order: null, authNumber, authName
+    };
+  }
+
+  const txDate = parseTxDate(date, time);
+  if (txDate) {
+    const age = Date.now() - txDate.getTime();
+    if (age > 7 * 86400000) {
+      return {
+        confidence: 'RED', status: 'PAGAMENTO_REJEITADO',
+        reason: 'data_antiga', payment: null, order: null, authNumber, authName
+      };
+    }
+  }
+
+  let destOk = null;
+  if (authNumber && destinationNumber) destOk = sameNumber(destinationNumber, authNumber);
+  else if (authNumber && !destinationNumber) destOk = null;
+
+  if (destOk === false) {
+    const payment = savePayment(database, {
+      orderId: null, transactionId, provider, value, fee,
+      destinationNumber, destinationName, date, time, raw,
+      status: 'PAGAMENTO_REJEITADO'
+    });
+    return {
+      confidence: 'RED', status: 'PAGAMENTO_REJEITADO',
+      reason: 'destino_incorreto', payment, order: null, authNumber, authName
+    };
+  }
+
+  let order = null;
+  if (groupJid && value != null) {
+    try {
+      const pendingOrders = database.prepare(`
+        SELECT * FROM orders
+        WHERE status = 'pending' AND (group_jid = ? OR group_jid IS NULL)
+        ORDER BY created_at DESC
+      `).all(groupJid);
+      for (const o of pendingOrders) {
+        if (o.value_expected != null && Math.abs(Number(o.value_expected) - Number(value)) < 0.05) {
+          order = o;
+          break;
+        }
+      }
+    } catch (_) {}
+  }
+
+  let confidence = 'YELLOW';
+  let status = 'PAGAMENTO_EM_VERIFICACAO';
+  let reason = 'verificacao';
+
+  if (transactionId && value != null && destOk === true) {
+    confidence = 'GREEN';
+    status = 'PAGAMENTO_VALIDO';
+    reason = 'ok';
+  } else if (transactionId && value != null && !authNumber) {
+    confidence = 'YELLOW';
+    status = 'PAGAMENTO_EM_VERIFICACAO';
+    reason = 'grupo_sem_configpagamento';
+  } else if (transactionId && value != null) {
+    confidence = 'YELLOW';
+    status = 'PAGAMENTO_EM_VERIFICACAO';
+    reason = 'destino_nao_confirmado';
+  } else {
+    confidence = 'RED';
+    status = 'PAGAMENTO_INVALIDO';
+    reason = 'dados_incompletos';
+  }
+
+  const payment = savePayment(database, {
+    orderId: order ? order.id : null,
+    transactionId, provider, value, fee,
+    destinationNumber, destinationName, date, time, raw, status
+  });
+
+  if (status === 'PAGAMENTO_VALIDO' && order) {
+    try { database.prepare('UPDATE orders SET status = ? WHERE id = ?').run('paid', order.id); } catch (_) {}
+  }
+
+  return { confidence, status, reason, payment, order, authNumber, authName };
+}
+
+function formatDetectionReply(paymentData, analysis) {
+  const { provider, transactionId, value, destinationName, destinationNumber, date, time } = paymentData;
+  const conf = analysis.confidence || 'YELLOW';
+
+  if (conf === 'GREEN') {
+    let text =
+      '💳 *PAGAMENTO APROVADO!* ✅\n\n' +
+      '💰 Valor: ' + formatMoney(value) + '\n' +
+      '🏦 Operadora: ' + provLabel(provider) + '\n';
+    if (destinationName) text += '📤 Destino: ' + destinationName + '\n';
+    if (destinationNumber) text += '📱 Número destino: ' + destinationNumber + '\n';
+    if (date || time) text += '🕐 Data/Hora: ' + (date || '') + (time ? ' às ' + time : '') + '\n';
+    if (transactionId) text += '🆔 Transação: ' + transactionId + '\n';
+    text +=
+      '\n✅ Pagamento confirmado com sucesso!\n\n' +
+      '📱 Agora envie o *número* que vai receber os megas.\n' +
+      '⚠️ O número deve começar com *84* ou *85*.';
+    return text;
+  }
+
+  if (conf === 'RED') {
+    let text =
+      '❌ *PAGAMENTO NÃO APROVADO*\n\n' +
+      '💰 Valor: ' + formatMoney(value) + '\n' +
+      '🏦 Operadora: ' + provLabel(provider) + '\n';
+    if (destinationName) text += '📤 Destino: ' + destinationName + '\n';
+    if (date || time) text += '📅 Data/Hora: ' + (date || '') + (time ? ' às ' + time : '') + '\n';
+    if (transactionId) text += '🆔 Transação: ' + transactionId + '\n';
+    text +=
+      '\n⚠️ Seu pagamento não pôde ser confirmado.\n\n' +
+      '🔎 Motivo: Os dados do pagamento não correspondem aos critérios de validação.\n\n' +
+      '🚫 Seu pedido não será processado.\n\n' +
+      '📌 Caso acredite que houve um erro, entre em contacto com um ADM.';
+    return text;
+  }
+
+  let text =
+    '🟡 *VERIFICAÇÃO NECESSÁRIA*\n\n' +
+    '💰 Valor: ' + formatMoney(value) + '\n' +
+    '🏦 Operadora: ' + provLabel(provider) + '\n';
+  if (destinationNumber) text += '📱 Destino lido: ' + destinationNumber + '\n';
+  if (transactionId) text += '🆔 Transação: ' + transactionId + '\n';
+  if (date || time) text += '🕐 Data/Hora: ' + (date || '') + (time ? ' às ' + time : '') + '\n';
+  text +=
+    '\n⚠️ Não foi possível confirmar automaticamente.\n' +
+    'Um ADM deve verificar este comprovativo.';
+  if (analysis.reason === 'grupo_sem_configpagamento') {
+    text += '\n\n📌 Dica ADM: configure com *configpagamento NUMERO Nome*';
+  }
+  return text;
+}
+
+function formatMegaAccepted(megaNumber) {
+  return (
+    '⏳ *PEDIDO EM PROCESSAMENTO*\n\n' +
+    '📱 Número recebido e validado: *' + megaNumber + '*\n' +
+    '📦 Seu pedido está sendo processado.\n\n' +
+    '👨‍💼 Aguarde o ADM enviar os megas.\n\n' +
+    '✅ Assim que o envio for realizado, seu pedido será concluído.'
+  );
+}
+
+module.exports = {
+  analyzePayment,
+  formatDetectionReply,
+  formatMegaAccepted,
+  setPendingMega,
+  getPendingMega,
+  clearPendingMega,
+  isValidMegaNumber,
+  normalizeMz,
+  sameNumber
+};

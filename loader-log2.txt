@@ -1,0 +1,118 @@
+
+> beatriz-bot@1.0.1 start
+> node src/index.js
+
+[DB] Banco de dados inicializado: ./data/beatriz.db
+[REGISTRY] Comando já registrado, ignorando: 1
+[REGISTRY] Comando já registrado, ignorando: 2
+[REGISTRY] Comando já registrado, ignorando: 3
+[REGISTRY] Comando já registrado, ignorando: 4
+[REGISTRY] Comando já registrado, ignorando: 5
+[REGISTRY] Comando já registrado, ignorando: 6
+[REGISTRY] Comando já registrado, ignorando: 7
+[REGISTRY] Alias conflitante ignorado: soco
+[REGISTRY] Alias conflitante ignorado: punch
+[REGISTRY] Comando já registrado, ignorando: tapa
+[REGISTRY] Alias conflitante ignorado: kick
+[REGISTRY] Alias conflitante ignorado: adivinhar
+[REGISTRY] Comando já registrado, ignorando: chute
+[REGISTRY] Alias conflitante ignorado: forca
+[REGISTRY] Alias conflitante ignorado: t
+[REGISTRY] Alias conflitante ignorado: net
+[REGISTRY] Alias conflitante ignorado: net
+[REGISTRY] Alias conflitante ignorado: megas
+[REGISTRY] Alias conflitante ignorado: megas
+[REGISTRY] Alias conflitante ignorado: net
+[REGISTRY] Alias conflitante ignorado: buy
+[LOADER] ERRO LOAD dono/modointernet.js: Invalid left-hand side in assignment
+[REGISTRY] Comando já registrado, ignorando: listagrupos
+[REGISTRY] Alias conflitante ignorado: setaudio
+[REGISTRY] Alias conflitante ignorado: owner
+[REGISTRY] Alias conflitante ignorado: criador
+[REGISTRY] Alias conflitante ignorado: bia
+[REGISTRY] Alias conflitante ignorado: bia
+[REGISTRY] Alias conflitante ignorado: pinterest
+[vta] baileys: @whiskeysockets/baileys
+[REGISTRY] Comando já registrado, ignorando: ytd
+[REGISTRY] Comando já registrado, ignorando: yta
+[REGISTRY] Alias conflitante ignorado: tocar
+[REGISTRY] Comando já registrado, ignorando: yt
+which: no anim_dump in (/data/data/com.termux/files/home/beatriz-bot/node_modules/.bin:/data/data/com.termux/files/home/node_modules/.bin:/data/data/com.termux/files/node_modules/.bin:/data/data/com.termux/node_modules/.bin:/data/data/node_modules/.bin:/data/node_modules/.bin:/node_modules/.bin:/data/data/com.termux/files/usr/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin:/data/data/com.termux/files/home/.local/bin:/data/data/com.termux/files/usr/bin)
+[gif] ffmpeg= /data/data/com.termux/files/usr/bin/ffmpeg anim_dump= null webpmux= /data/data/com.termux/files/usr/bin/webpmux
+[REGISTRY] Alias conflitante ignorado: stt
+[REGISTRY] Alias conflitante ignorado: pet
+[REGISTRY] Alias conflitante ignorado: work
+[REGISTRY] Alias conflitante ignorado: jogo
+[REGISTRY] Comando já registrado, ignorando: amor
+[REGISTRY] Comando já registrado, ignorando: roxo
+[REGISTRY] Comando já registrado, ignorando: comida
+[REGISTRY] Comando já registrado, ignorando: status
+[REGISTRY] Comando já registrado, ignorando: brabo
+[REGISTRY] Comando já registrado, ignorando: frutas
+[REGISTRY] Comando já registrado, ignorando: fogo
+[REGISTRY] Comando já registrado, ignorando: gelo
+[REGISTRY] Comando já registrado, ignorando: festa
+[REGISTRY] Comando já registrado, ignorando: musica
+[REGISTRY] Comando já registrado, ignorando: animal
+[REGISTRY] Comando já registrado, ignorando: feliz
+[REGISTRY] Comando já registrado, ignorando: triste
+[REGISTRY] Comando já registrado, ignorando: raiva
+[REGISTRY] Comando já registrado, ignorando: sono
+[REGISTRY] Comando já registrado, ignorando: dinheiro
+[REGISTRY] Comando já registrado, ignorando: viagem
+[REGISTRY] Comando já registrado, ignorando: natureza
+[REGISTRY] Comando já registrado, ignorando: chuva
+[REGISTRY] Comando já registrado, ignorando: sol
+[REGISTRY] Comando já registrado, ignorando: lua
+[REGISTRY] Comando já registrado, ignorando: estrela
+[REGISTRY] Comando já registrado, ignorando: coracao
+[REGISTRY] Comando já registrado, ignorando: beijo
+[REGISTRY] Comando já registrado, ignorando: abraco
+[REGISTRY] Comando já registrado, ignorando: danca
+[REGISTRY] Comando já registrado, ignorando: esporte
+[REGISTRY] Comando já registrado, ignorando: jogo
+[REGISTRY] Comando já registrado, ignorando: foto
+[REGISTRY] Comando já registrado, ignorando: escola
+[REGISTRY] Comando já registrado, ignorando: trabalho
+[REGISTRY] Comando já registrado, ignorando: casa
+[REGISTRY] Comando já registrado, ignorando: carro
+[REGISTRY] Comando já registrado, ignorando: aviao
+[REGISTRY] Comando já registrado, ignorando: praia
+[REGISTRY] Comando já registrado, ignorando: noite
+[REGISTRY] Comando já registrado, ignorando: cafe
+[REGISTRY] Comando já registrado, ignorando: doce
+[REGISTRY] Comando já registrado, ignorando: pizza
+[REGISTRY] Comando já registrado, ignorando: bebida
+[REGISTRY] Comando já registrado, ignorando: flor
+[REGISTRY] Comando já registrado, ignorando: mar
+[REGISTRY] Comando já registrado, ignorando: fantasma
+[REGISTRY] Comando já registrado, ignorando: robo
+[REGISTRY] Comando já registrado, ignorando: alien
+[REGISTRY] Comando já registrado, ignorando: palhaco
+[REGISTRY] Comando já registrado, ignorando: rei
+[REGISTRY] Comando já registrado, ignorando: ninja
+[REGISTRY] Comando já registrado, ignorando: heroi
+[REGISTRY] Comando já registrado, ignorando: sorte
+[REGISTRY] Comando já registrado, ignorando: paz
+[REGISTRY] Comando já registrado, ignorando: forca
+[REGISTRY] Comando já registrado, ignorando: vitoria
+[REGISTRY] Comando já registrado, ignorando: obrigado
+[REGISTRY] Comando já registrado, ignorando: tchau
+[REGISTRY] Comando já registrado, ignorando: oi
+[REGISTRY] Comando já registrado, ignorando: ok
+[REGISTRY] Comando já registrado, ignorando: meuxp
+[REGISTRY] Alias conflitante ignorado: iskinv
+[REGISTRY] Alias conflitante ignorado: iskbag
+[REGISTRY] Alias conflitante ignorado: iskajuda
+[REGISTRY] Comando já registrado, ignorando: iskrelacoes
+[LOADER] atalho d -> delmsg OK
+[LOADER] 962 comandos carregados | Principais: 889
+
+🤖 BEATRIZ BOT
+📦 Comandos principais: 910
+🔗 Aliases: 748
+👑 Dono: 874288439
+
+[SEC QUEUE] sendMessage envolvido (fila inteligente ativa)
+Conexao fechada. Codigo: 401 Motivo: Connection Failure Reconectar: false
+Deslogado. Apague a pasta session e reinicie.

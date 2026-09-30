@@ -1,0 +1,776 @@
+{
+  "222": {
+    "file": "222.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-28T21:56:42.477Z"
+  },
+  "404": {
+    "file": "404.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-28T21:56:53.555Z"
+  },
+  "menu dono": {
+    "file": "menu_dono.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-22T12:30:09.176Z"
+  },
+  "kiss": {
+    "file": "kiss.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T12:31:20.820Z"
+  },
+  "menu bn": {
+    "file": "menu_bn.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-22T12:40:47.874Z"
+  },
+  "menu adm": {
+    "file": "menu_adm.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-22T12:41:12.576Z"
+  },
+  "tapa": {
+    "file": "tapa.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T12:41:33.397Z"
+  },
+  "slap": {
+    "file": "slap.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T12:41:33.399Z"
+  },
+  "rir": {
+    "file": "rir.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-24T21:42:28.650Z"
+  },
+  "menu rpg família": {
+    "file": "menu_rpg_fam_lia.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T12:52:14.477Z"
+  },
+  "menu rpg": {
+    "file": "menu_rpg.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-24T22:26:08.711Z"
+  },
+  "menu diversao": {
+    "file": "menu_diversao.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-22T14:06:11.573Z"
+  },
+  "tchau": {
+    "file": "tchau.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:08:54.800Z"
+  },
+  "bye": {
+    "file": "bye.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:08:54.804Z"
+  },
+  "chorar": {
+    "file": "chorar.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:18:03.891Z"
+  },
+  "sol": {
+    "file": "sol.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:15:01.728Z"
+  },
+  "sunny": {
+    "file": "sunny.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:15:01.737Z"
+  },
+  "roxo": {
+    "file": "roxo.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:17:21.387Z"
+  },
+  "purple": {
+    "file": "purple.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:17:21.391Z"
+  },
+  "bater": {
+    "file": "bater.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:17:51.296Z"
+  },
+  "soco": {
+    "file": "soco.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:17:51.303Z"
+  },
+  "punch": {
+    "file": "punch.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:17:51.310Z"
+  },
+  "abraco": {
+    "file": "abraco.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:19:17.572Z"
+  },
+  "abraço": {
+    "file": "abra_o.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:19:17.575Z"
+  },
+  "hug": {
+    "file": "hug.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:19:17.579Z"
+  },
+  "dancar": {
+    "file": "dancar.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:19:48.630Z"
+  },
+  "ignorar": {
+    "file": "ignorar.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:21:18.911Z"
+  },
+  "amo": {
+    "file": "amo.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:21:36.639Z"
+  },
+  "admirar": {
+    "file": "admirar.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:23:02.899Z"
+  },
+  "odeio": {
+    "file": "odeio.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:24:23.943Z"
+  },
+  "adotar": {
+    "file": "adotar.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:25:13.685Z"
+  },
+  "piscar": {
+    "file": "piscar.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:26:46.747Z"
+  },
+  "gelo": {
+    "file": "gelo.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:28:06.850Z"
+  },
+  "ice": {
+    "file": "ice.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:28:06.853Z"
+  },
+  "frio": {
+    "file": "frio.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:28:06.856Z"
+  },
+  "raiva": {
+    "file": "raiva.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:28:52.004Z"
+  },
+  "angry": {
+    "file": "angry.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:28:52.007Z"
+  },
+  "doce": {
+    "file": "doce.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:29:38.218Z"
+  },
+  "sweet": {
+    "file": "sweet.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:29:38.221Z"
+  },
+  "ok": {
+    "file": "ok.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:00:26.344Z"
+  },
+  "okay": {
+    "file": "okay.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:00:26.351Z"
+  },
+  "certo": {
+    "file": "certo.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:00:26.357Z"
+  },
+  "paz": {
+    "file": "paz.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:31:13.358Z"
+  },
+  "peace": {
+    "file": "peace.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T14:31:13.361Z"
+  },
+  "gay": {
+    "file": "gay.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-22T15:46:32.470Z"
+  },
+  "rankgay": {
+    "file": "rankgay.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-22T15:46:45.214Z"
+  },
+  "ranklesbica": {
+    "file": "ranklesbica.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-22T15:56:30.509Z"
+  },
+  "lesbica": {
+    "file": "lesbica.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-22T15:56:56.185Z"
+  },
+  "online": {
+    "file": "online.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-22T16:09:27.059Z"
+  },
+  "menu": {
+    "file": "menu.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-24T17:38:48.146Z"
+  },
+  "help": {
+    "file": "help.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-24T17:38:48.157Z"
+  },
+  "ajuda": {
+    "file": "ajuda.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-24T17:38:48.162Z"
+  },
+  "comandos": {
+    "file": "comandos.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-24T17:38:48.175Z"
+  },
+  "abracarforte": {
+    "file": "abracarforte.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-24T21:46:24.034Z"
+  },
+  "acenar": {
+    "file": "acenar.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-24T22:13:09.452Z"
+  },
+  "namorar": {
+    "file": "namorar.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:01:47.712Z"
+  },
+  "pedirnamoro": {
+    "file": "pedirnamoro.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:01:47.717Z"
+  },
+  "casar": {
+    "file": "casar.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-24T22:22:59.204Z"
+  },
+  "transar": {
+    "file": "transar.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-24T22:24:20.538Z"
+  },
+  "menu internet": {
+    "file": "menu_internet.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-24T22:30:23.252Z"
+  },
+  "ship": {
+    "file": "ship.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T11:53:48.220Z"
+  },
+  "shippar": {
+    "file": "shippar.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T11:53:48.226Z"
+  },
+  "calmo": {
+    "file": "calmo.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T11:55:10.831Z"
+  },
+  "popular": {
+    "file": "popular.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T11:56:37.186Z"
+  },
+  "sigma": {
+    "file": "sigma.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T11:58:10.700Z"
+  },
+  "status": {
+    "file": "status.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T11:58:27.309Z"
+  },
+  "botstatus": {
+    "file": "botstatus.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T11:58:27.314Z"
+  },
+  "feio": {
+    "file": "feio.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:02:19.943Z"
+  },
+  "esperto": {
+    "file": "esperto.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:03:31.828Z"
+  },
+  "careta": {
+    "file": "careta.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:05:19.797Z"
+  },
+  "face": {
+    "file": "face.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:05:19.799Z"
+  },
+  "grimace": {
+    "file": "grimace.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:05:19.801Z"
+  },
+  "matar": {
+    "file": "matar.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-25T12:09:50.301Z"
+  },
+  "kill": {
+    "file": "kill.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-25T12:09:50.304Z"
+  },
+  "eliminar": {
+    "file": "eliminar.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-25T12:09:50.308Z"
+  },
+  "nerd": {
+    "file": "nerd.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:14:42.342Z"
+  },
+  "louco": {
+    "file": "louco.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:17:03.949Z"
+  },
+  "pobre": {
+    "file": "pobre.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:20:02.375Z"
+  },
+  "playboy": {
+    "file": "playboy.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:20:15.057Z"
+  },
+  "vagabundo": {
+    "file": "vagabundo.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:21:24.474Z"
+  },
+  "talarico": {
+    "file": "talarico.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:22:13.199Z"
+  },
+  "beta": {
+    "file": "beta.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:25:27.370Z"
+  },
+  "covarde": {
+    "file": "covarde.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:26:30.799Z"
+  },
+  "pegador": {
+    "file": "pegador.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:28:18.204Z"
+  },
+  "rankgado": {
+    "file": "rankgado.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:30:19.430Z"
+  },
+  "gado": {
+    "file": "gado.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:30:32.232Z"
+  },
+  "antisocial": {
+    "file": "antisocial.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:31:41.974Z"
+  },
+  "burro": {
+    "file": "burro.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:33:24.388Z"
+  },
+  "rankburro": {
+    "file": "rankburro.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:33:49.767Z"
+  },
+  "magrelo": {
+    "file": "magrelo.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:35:48.534Z"
+  },
+  "corno": {
+    "file": "corno.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:38:23.139Z"
+  },
+  "digital": {
+    "file": "digital.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:39:25.322Z"
+  },
+  "romantico": {
+    "file": "romantico.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-25T12:40:46.797Z"
+  },
+  "extrovertido": {
+    "file": "extrovertido.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-25T12:48:46.618Z"
+  },
+  "trair": {
+    "file": "trair.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-25T12:50:05.656Z"
+  },
+  "backrooms": {
+    "file": "backrooms.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-08-27T21:10:00.996Z"
+  },
+  "owner": {
+    "file": "owner.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-29T18:15:59.906Z"
+  },
+  "criador": {
+    "file": "criador.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-29T18:15:59.916Z"
+  },
+  "dono": {
+    "file": "dono.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-08-29T18:15:59.925Z"
+  },
+  "menu grupo": {
+    "file": "menu_grupo.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-03T00:52:42.185Z"
+  },
+  "menu imagem": {
+    "file": "menu_imagem.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-03T00:53:35.848Z"
+  },
+  "menu stickers": {
+    "file": "menu_stickers.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-03T00:55:03.920Z"
+  },
+  "menu utilidades": {
+    "file": "menu_utilidades.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-03T14:46:48.176Z"
+  },
+  "iskmenu": {
+    "file": "iskmenu.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-04T14:11:23.355Z"
+  },
+  "iskmodo on": {
+    "file": "iskmodo_on.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-04T14:14:32.797Z"
+  },
+  "otaku": {
+    "file": "otaku.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-09-08T14:30:37.452Z"
+  },
+  "aluguel": {
+    "file": "aluguel.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-09-10T16:18:32.901Z"
+  },
+  "planosaluguel": {
+    "file": "planosaluguel.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-09-10T16:18:32.908Z"
+  },
+  "precosaluguel": {
+    "file": "precosaluguel.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-09-10T16:18:32.912Z"
+  },
+  "rent": {
+    "file": "rent.jpg",
+    "type": "image",
+    "mimetype": "image/jpeg",
+    "updatedAt": "2026-09-10T16:18:32.915Z"
+  },
+  "menu webgames": {
+    "file": "menu_webgames.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-11T17:38:19.630Z"
+  },
+  "menu download": {
+    "file": "menu_download.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:07:24.926Z"
+  },
+  "menudownload": {
+    "file": "menudownload.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:09:10.637Z"
+  },
+  "menudl": {
+    "file": "menudl.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:09:10.646Z"
+  },
+  "menubaixar": {
+    "file": "menubaixar.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:09:10.653Z"
+  },
+  "downloadmenu": {
+    "file": "downloadmenu.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:09:10.658Z"
+  },
+  "menudown": {
+    "file": "menudown.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:09:10.663Z"
+  },
+  "menu-download": {
+    "file": "menu_download.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:09:10.669Z"
+  },
+  "menu_download": {
+    "file": "menu_download.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:09:10.674Z"
+  },
+  "downloads": {
+    "file": "downloads.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:09:10.679Z"
+  },
+  "menumodos": {
+    "file": "menumodos.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:15:36.407Z"
+  },
+  "menumodo": {
+    "file": "menumodo.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:15:36.417Z"
+  },
+  "menu modos": {
+    "file": "menu_modos.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:15:36.422Z"
+  },
+  "modos": {
+    "file": "modos.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:15:36.427Z"
+  },
+  "menusistemas": {
+    "file": "menusistemas.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:15:36.431Z"
+  },
+  "menuswitch": {
+    "file": "menuswitch.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:15:36.436Z"
+  },
+  "menuseguranca": {
+    "file": "menuseguranca.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:19:12.292Z"
+  },
+  "menu seguranca": {
+    "file": "menu_seguranca.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:19:12.297Z"
+  },
+  "menúseguranca": {
+    "file": "men_seguranca.mp4",
+    "type": "gif",
+    "mimetype": "video/mp4",
+    "updatedAt": "2026-09-20T07:19:12.303Z"
+  }
+}

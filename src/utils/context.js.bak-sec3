@@ -1,0 +1,172 @@
+/**
+ * Contexto de execução de comando
+ */
+
+const config = require('../config');
+const mentionUtil = require('./mention');
+const db = require('../database');
+
+class Context {
+  constructor(sock, msg, parsed) {
+    this.sock = sock;
+    this.msg = msg;
+    this.raw = msg;
+    this.parsed = parsed; // { command, args, text, prefix, hasPrefix, body }
+
+    this.jid = msg.key.remoteJid;
+    // Em grupo a identidade REAL é participant (não participantPn)
+    // participantPn só serve para mostrar o número do telefone
+    this.sender = msg.key.participant || msg.key.remoteJid;
+    this.senderPn = msg.key.participantPn || msg.key.remoteJidAlt || null;
+    this.senderLid = this.sender;
+    this.fromMe = msg.key.fromMe;
+    this.isGroup = this.jid.endsWith('@g.us');
+    this.isPrivate = !this.isGroup;
+
+    this.body = parsed.body || '';
+    this.args = parsed.args || [];
+    this.text = parsed.text || '';
+    this.commandName = parsed.command || '';
+    this.prefix = parsed.prefix || '';
+    this.hasPrefix = !!parsed.hasPrefix;
+
+    const _msg = msg.message || {};
+    const _ci =
+      _msg.extendedTextMessage?.contextInfo ||
+      _msg.imageMessage?.contextInfo ||
+      _msg.videoMessage?.contextInfo ||
+      _msg.buttonsResponseMessage?.contextInfo ||
+      null;
+    this.quoted = _ci?.quotedMessage || _msg.extendedTextMessage?.contextInfo?.quotedMessage || null;
+    this.mentioned = (_ci && _ci.mentionedJid) || _msg.extendedTextMessage?.contextInfo?.mentionedJid || [];
+    this.hasMedia = !!(msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.stickerMessage || msg.message?.documentMessage || msg.message?.audioMessage);
+
+    // Lazy
+    this._user = null;
+    this._group = null;
+    this._isAdmin = null;
+    this._isBotAdmin = null;
+  }
+
+  get user() {
+    if (!this._user) this._user = db.getUser(this.sender);
+    return this._user;
+  }
+
+  get group() {
+    if (!this.isGroup) return null;
+    if (!this._group) this._group = db.getGroup(this.jid);
+    return this._group;
+  }
+
+  isOwner() {
+    return config.isOwner(this.sender)
+      || config.isOwner(this.senderLid)
+      || config.isOwner(this.senderPn);
+  }
+
+  isBotAdmin() {
+    if (this._isBotAdmin === null) {
+      this._isBotAdmin = db.isBotAdmin(this.sender);
+    }
+    return this._isBotAdmin;
+  }
+
+  async isGroupAdmin() {
+    if (!this.isGroup) return false;
+    if (this._isAdmin !== null) return this._isAdmin;
+    try {
+      const meta = await this.sock.groupMetadata(this.jid);
+      const participant = meta.participants.find(p => p.id === this.sender || p.id === this.sender.replace('@s.whatsapp.net', '@lid'));
+      this._isAdmin = participant && (participant.admin === 'admin' || participant.admin === 'superadmin');
+    } catch {
+      this._isAdmin = false;
+    }
+    return this._isAdmin;
+  }
+
+  async reply(text, options = {}) {
+    try {
+      let mentions = options.mentions || [];
+      const quoted = options.quoted !== undefined ? options.quoted : this.msg;
+      // Resolve JIDs para participantes reais do grupo (menção vira NOME no WhatsApp)
+      if (mentions.length && this.isGroup) {
+        const resolved = [];
+        for (const j of mentions) {
+          resolved.push(await mentionUtil.resolveInGroup(this.sock, this.jid, j));
+        }
+        mentions = resolved.filter(Boolean);
+        // Reescreve @tokens no texto para bater com os JIDs resolvidos
+        // (WhatsApp liga @id do texto com mentions[])
+      }
+      const content = { text: String(text) };
+      if (mentions.length) {
+        content.mentions = mentions;
+        // compatibilidade extra
+        content.contextInfo = Object.assign({}, content.contextInfo || {}, {
+          mentionedJid: mentions
+        });
+      }
+      return await this.sock.sendMessage(this.jid, content, { quoted: quoted });
+    } catch (e) {
+      console.error('[REPLY ERROR]', e.message);
+      return null;
+    }
+  }
+
+  /** Atalho: menciona pessoas com texto e JIDs */
+  async replyMentions(text, jids, options = {}) {
+    return this.reply(text, Object.assign({}, options, { mentions: [].concat(jids || []) }));
+  }
+
+  async send(content, options = {}) {
+    try {
+      return await this.sock.sendMessage(this.jid, content, { quoted: this.msg, ...options });
+    } catch (e) {
+      console.error('[SEND ERROR]', e.message);
+      return null;
+    }
+  }
+
+  async react(emoji) {
+    try {
+      await this.sock.sendMessage(this.jid, {
+        react: { text: emoji, key: this.msg.key }
+      });
+    } catch {}
+  }
+
+  getMentionedOrQuoted() {
+    // 1) @menção explícita
+    if (this.mentioned && this.mentioned.length) return this.mentioned[0];
+    const msg = this.msg.message || {};
+    const ci =
+      msg.extendedTextMessage?.contextInfo ||
+      msg.imageMessage?.contextInfo ||
+      msg.videoMessage?.contextInfo ||
+      msg.stickerMessage?.contextInfo ||
+      null;
+    // 2) menções em contextInfo
+    if (ci?.mentionedJid && ci.mentionedJid.length) return ci.mentionedJid[0];
+    // 3) resposta a alguém
+    if (ci?.participant) return ci.participant;
+    return null;
+  }
+
+  /** Token do @ no texto (sem @lid no meio) */
+  mentionToken(jid) {
+    if (!jid) return 'user';
+    return String(jid).split('@')[0];
+  }
+
+  async getGroupMetadata() {
+    if (!this.isGroup) return null;
+    try {
+      return await this.sock.groupMetadata(this.jid);
+    } catch {
+      return null;
+    }
+  }
+}
+
+module.exports = Context;

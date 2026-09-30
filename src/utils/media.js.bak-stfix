@@ -1,0 +1,282 @@
+/**
+ * Imagem para Termux: Jimp + conversão WebP via cwebp/ffmpeg se existir
+ */
+const { execFile } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
+
+let sharp = null;
+let Jimp = null;
+let mode = 'none';
+
+try {
+  sharp = require('sharp');
+  mode = 'sharp';
+} catch {
+  sharp = null;
+}
+
+if (!sharp) {
+  try {
+    Jimp = require('jimp');
+    mode = 'jimp';
+  } catch {
+    Jimp = null;
+    mode = 'none';
+  }
+}
+
+function available() {
+  return mode !== 'none';
+}
+
+function engineName() {
+  return mode;
+}
+
+function tmp(ext) {
+  return path.join(os.tmpdir(), `beatriz_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`);
+}
+
+/** PNG/JPEG buffer → WebP buffer (cwebp ou ffmpeg) */
+async function pngToWebp(pngBuffer) {
+  const inFile = tmp('png');
+  const outFile = tmp('webp');
+  fs.writeFileSync(inFile, pngBuffer);
+  try {
+    // 1) cwebp (pkg install libwebp)
+    try {
+      await execFileAsync('cwebp', [inFile, '-q', '80', '-o', outFile], { timeout: 30000 });
+      if (fs.existsSync(outFile)) return fs.readFileSync(outFile);
+    } catch (_) {}
+    // 2) ffmpeg
+    try {
+      await execFileAsync('ffmpeg', ['-y', '-i', inFile, '-vcodec', 'libwebp', outFile], { timeout: 30000 });
+      if (fs.existsSync(outFile)) return fs.readFileSync(outFile);
+    } catch (_) {}
+    return null;
+  } finally {
+    try { fs.unlinkSync(inFile); } catch (_) {}
+    try { fs.unlinkSync(outFile); } catch (_) {}
+  }
+}
+
+async function webpToPng(webpBuffer) {
+  const inFile = tmp('webp');
+  const outFile = tmp('png');
+  fs.writeFileSync(inFile, webpBuffer);
+  try {
+    try {
+      await execFileAsync('dwebp', [inFile, '-o', outFile], { timeout: 30000 });
+      if (fs.existsSync(outFile)) return fs.readFileSync(outFile);
+    } catch (_) {}
+    try {
+      await execFileAsync('ffmpeg', ['-y', '-i', inFile, '-frames:v', '1', outFile], { timeout: 30000 });
+      if (fs.existsSync(outFile)) return fs.readFileSync(outFile);
+    } catch (_) {}
+    return null;
+  } finally {
+    try { fs.unlinkSync(inFile); } catch (_) {}
+    try { fs.unlinkSync(outFile); } catch (_) {}
+  }
+}
+
+
+async function videoToAnimatedWebp(videoBuffer, maxSeconds = 9) {
+  const inFile = tmp('mp4');
+  const outFile = tmp('webp');
+  fs.writeFileSync(inFile, videoBuffer);
+  try {
+    try {
+      await execFileAsync('ffmpeg', [
+        '-y', '-i', inFile, '-t', String(maxSeconds),
+        '-vf', 'scale=512:512:force_original_aspect_ratio=disable,fps=12,setsar=1',
+        '-an', '-loop', '0', '-vsync', '0', outFile
+      ], { timeout: 120000, maxBuffer: 20 * 1024 * 1024 });
+    } catch (_) {
+      await execFileAsync('ffmpeg', [
+        '-y', '-i', inFile, '-t', String(maxSeconds),
+        '-vf', 'scale=512:512,fps=10', '-an', '-vcodec', 'libwebp', '-loop', '0', outFile
+      ], { timeout: 120000, maxBuffer: 20 * 1024 * 1024 });
+    }
+    if (fs.existsSync(outFile)) {
+      const out = fs.readFileSync(outFile);
+      if (out && out.length > 100) return out;
+    }
+    return null;
+  } finally {
+    try { fs.unlinkSync(inFile); } catch (_) {}
+    try { fs.unlinkSync(outFile); } catch (_) {}
+  }
+}
+
+async function toStickerWebp(buffer) {
+  if (mode === 'sharp') {
+    return sharp(buffer)
+      .resize(512, 512, { fit: 'fill' })
+      .webp({ quality: 80 })
+      .toBuffer();
+  }
+  if (mode === 'jimp') {
+    const img = await Jimp.read(buffer);
+    if (typeof img.cover === 'function') {
+      img.resize(512, 512);
+    } else {
+      const w = img.bitmap.width;
+      const h = img.bitmap.height;
+      const side = Math.min(w, h);
+      const x = Math.floor((w - side) / 2);
+      const y = Math.floor((h - side) / 2);
+      img.crop(x, y, side, side);
+      img.resize(512, 512);
+    }
+    const png = await img.getBufferAsync(Jimp.MIME_PNG);
+    const webp = await pngToWebp(png);
+    if (webp) return webp;
+    // sem cwebp/ffmpeg: devolve PNG (caller pode enviar como imagem)
+    const err = new Error('NO_WEBP');
+    err.png = png;
+    throw err;
+  }
+  throw new Error('Nenhum processador de imagem');
+}
+
+async function toPng(buffer) {
+  if (!buffer || !buffer.length) throw new Error('Buffer vazio');
+  if (mode === 'sharp') {
+    try { return await sharp(buffer).png().toBuffer(); }
+    catch (e) {
+      const via = await webpToPng(buffer);
+      if (via) return via;
+      throw e;
+    }
+  }
+  if (mode === 'jimp') {
+    try {
+      const img = await Jimp.read(buffer);
+      return await img.getBufferAsync(Jimp.MIME_PNG);
+    } catch (_) {
+      const via = await webpToPng(buffer);
+      if (via) return via;
+      const head = buffer.slice(0, 8);
+      if (head[0] === 0x89 && head[1] === 0x50) return buffer;
+      if (head[0] === 0xff && head[1] === 0xd8) return buffer;
+      throw new Error('WebP: instale pkg install libwebp ffmpeg');
+    }
+  }
+  const via = await webpToPng(buffer);
+  if (via) return via;
+  throw new Error('Nenhum processador');
+}
+
+async function blur(buffer, sigma = 5) {
+  if (mode === 'sharp') return sharp(buffer).blur(sigma).jpeg().toBuffer();
+  if (mode === 'jimp') {
+    const img = await Jimp.read(buffer);
+    img.blur(Math.min(10, sigma));
+    return img.getBufferAsync(Jimp.MIME_JPEG);
+  }
+  throw new Error('Nenhum processador');
+}
+
+async function grayscale(buffer) {
+  if (mode === 'sharp') return sharp(buffer).grayscale().jpeg().toBuffer();
+  if (mode === 'jimp') {
+    const img = await Jimp.read(buffer);
+    img.greyscale();
+    return img.getBufferAsync(Jimp.MIME_JPEG);
+  }
+  throw new Error('Nenhum processador');
+}
+
+async function rotate(buffer, deg = 90) {
+  if (mode === 'sharp') return sharp(buffer).rotate(deg).jpeg().toBuffer();
+  if (mode === 'jimp') {
+    const img = await Jimp.read(buffer);
+    img.rotate(deg);
+    return img.getBufferAsync(Jimp.MIME_JPEG);
+  }
+  throw new Error('Nenhum processador');
+}
+
+async function flip(buffer, horizontal = true) {
+  if (mode === 'sharp') {
+    const s = sharp(buffer);
+    return (horizontal ? s.flop() : s.flip()).jpeg().toBuffer();
+  }
+  if (mode === 'jimp') {
+    const img = await Jimp.read(buffer);
+    img.flip(horizontal, !horizontal);
+    return img.getBufferAsync(Jimp.MIME_JPEG);
+  }
+  throw new Error('Nenhum processador');
+}
+
+async function invert(buffer) {
+  if (mode === 'sharp') return sharp(buffer).negate().jpeg().toBuffer();
+  if (mode === 'jimp') {
+    const img = await Jimp.read(buffer);
+    img.invert();
+    return img.getBufferAsync(Jimp.MIME_JPEG);
+  }
+  throw new Error('Nenhum processador');
+}
+
+async function resize(buffer, w, h) {
+  if (mode === 'sharp') return sharp(buffer).resize(w, h, { fit: 'inside' }).jpeg().toBuffer();
+  if (mode === 'jimp') {
+    const img = await Jimp.read(buffer);
+    img.contain(w, h);
+    return img.getBufferAsync(Jimp.MIME_JPEG);
+  }
+  throw new Error('Nenhum processador');
+}
+
+
+async function writeStickerExif(webpBuffer, packname, author) {
+  try {
+    const { Image } = require('node-webpmux');
+    const img = new Image();
+    await img.load(webpBuffer);
+    const json = {
+      'sticker-pack-id': 'com.beatriz.bot',
+      'sticker-pack-name': packname || 'BEATRIZ BOT',
+      'sticker-pack-publisher': author || 'Ebai +258 874288439',
+      emojis: ['📌']
+    };
+    const jsonBuf = Buffer.from(JSON.stringify(json), 'utf8');
+    // Cabecalho EXIF WhatsApp (padrao Baileys/bots)
+    const exifAttr = Buffer.from([
+      0x49, 0x49, 0x2A, 0x00, 0x08, 0x00, 0x00, 0x00,
+      0x01, 0x00, 0x41, 0x57, 0x07, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x16, 0x00, 0x00, 0x00
+    ]);
+    const len = Buffer.alloc(4);
+    len.writeUInt32LE(jsonBuf.length, 0);
+    const exif = Buffer.concat([exifAttr, len, jsonBuf]);
+    img.exif = exif;
+    return await img.save(null);
+  } catch (e) {
+    console.error('[exif]', e.message || e);
+    return webpBuffer;
+  }
+}
+
+module.exports = {
+  available,
+  engineName,
+  toStickerWebp,
+  writeStickerExif,
+  videoToAnimatedWebp,
+  toPng,
+  blur,
+  grayscale,
+  rotate,
+  flip,
+  invert,
+  resize,
+  pngToWebp
+};

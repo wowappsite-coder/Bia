@@ -1,0 +1,152 @@
+const isekaiDb = require('../../isekai/db');
+const economy = require('../../isekai/economy');
+const { getItem, RECIPES, SHOP_CATS } = require('../../isekai/items');
+
+function need(ctx) {
+  const g = isekaiDb.scopeGroup(ctx);
+  const d = isekaiDb.getPlayerData(ctx.sender, g);
+  if (!d || !d.race) return { ok: false, msg: 'Cria personagem: iskiniciar Nome' };
+  economy.ensureInv(d);
+  return { ok: true, data: d, group: g };
+}
+function save(ctx, g, d) { isekaiDb.savePlayerData(ctx.sender, g, d); }
+function argsOf(ctx) {
+  if (ctx.args && ctx.args.length) return ctx.args.map(String);
+  const t = String(ctx.text || '').trim();
+  return t ? t.split(/\s+/).filter(Boolean) : [];
+}
+
+module.exports = [
+  { name: 'isksaldo', aliases: ['iskiene', 'iskmoney'], category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      await ctx.reply('IENE\n\nSaldo: Y ' + n.data.iene);
+    }},
+  { name: 'iskloja', aliases: ['iskshop'], category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      let t = 'LOJAS ISEKAI\n\n';
+      Object.keys(SHOP_CATS).forEach(function (k) {
+        t += '- iskloja_' + k + ' — ' + SHOP_CATS[k].title + '\n';
+      });
+      t += '\nComprar: iskcomprar <id> [qtd]\nSaldo: isksaldo';
+      await ctx.reply(t);
+    }},
+  { name: 'iskloja_armas', category: 'isekai', handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      await ctx.reply(economy.formatShop('armas'));
+    }},
+  { name: 'iskloja_armaduras', category: 'isekai', handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      await ctx.reply(economy.formatShop('armaduras'));
+    }},
+  { name: 'iskloja_pocoes', category: 'isekai', handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      await ctx.reply(economy.formatShop('pocoes'));
+    }},
+  { name: 'iskloja_acessorios', category: 'isekai', handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      await ctx.reply(economy.formatShop('acessorios'));
+    }},
+  { name: 'iskloja_materiais', category: 'isekai', handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      await ctx.reply(economy.formatShop('materiais'));
+    }},
+  { name: 'iskloja_comida', category: 'isekai', handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      await ctx.reply(economy.formatShop('comida'));
+    }},
+  { name: 'iskloja_magia', category: 'isekai', handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      await ctx.reply(economy.formatShop('magia'));
+    }},
+  { name: 'iskloja_ferramentas', category: 'isekai', handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      await ctx.reply(economy.formatShop('ferramentas'));
+    }},
+  { name: 'iskcomprar', aliases: ['iskbuy'], category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const parts = argsOf(ctx);
+      const id = (parts[0] || '').toLowerCase();
+      const qty = parts[1] ? parseInt(parts[1], 10) : 1;
+      if (!id) return ctx.reply('Uso: iskcomprar <item> [qtd]\nEx: iskcomprar pocao 3');
+      const r = economy.buy(n.data, id, qty);
+      if (!r.ok) return ctx.reply(r.msg);
+      save(ctx, n.group, n.data);
+      await ctx.reply('Compra OK\n' + r.item.name + ' x' + r.qty + '\n-Y' + r.cost + '\nSaldo: Y' + r.iene);
+    }},
+  { name: 'iskvender', aliases: ['isksell'], category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const parts = argsOf(ctx);
+      const id = (parts[0] || '').toLowerCase();
+      const qty = parts[1] ? parseInt(parts[1], 10) : 1;
+      if (!id) return ctx.reply('Uso: iskvender <item> [qtd]');
+      const r = economy.sell(n.data, id, qty);
+      if (!r.ok) return ctx.reply(r.msg);
+      save(ctx, n.group, n.data);
+      await ctx.reply('Venda OK\n' + r.item.name + ' x' + r.qty + '\n+Y' + r.gain + '\nSaldo: Y' + r.iene);
+    }},
+  { name: 'iskinventario_old', aliases: ['iskinv', 'iskbag'], category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      await ctx.reply(economy.formatInv(n.data));
+    }},
+  { name: 'iskitem', category: 'isekai',
+    handler: async (ctx) => {
+      const id = (argsOf(ctx)[0] || '').toLowerCase();
+      if (!id) return ctx.reply('Uso: iskitem <id>');
+      const it = getItem(id);
+      if (!it) return ctx.reply('Item desconhecido.');
+      let t = it.name + ' [' + it.id + ']\nCat: ' + it.cat + ' | ' + (it.rarity || '-') + '\n';
+      if (it.buy != null) t += 'Compra: Y' + it.buy + '\n';
+      if (it.sell != null) t += 'Venda: Y' + it.sell + '\n';
+      if (it.slot) t += 'Slot: ' + it.slot + '\n';
+      if (it.atk) t += 'ATK +' + it.atk + '\n';
+      if (it.def) t += 'DEF +' + it.def + '\n';
+      if (it.mag) t += 'MAG +' + it.mag + '\n';
+      if (it.heal) t += 'Cura: ' + it.heal + '\n';
+      await ctx.reply(t);
+    }},
+  { name: 'iskequipar', aliases: ['iskequip'], category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const id = (argsOf(ctx)[0] || '').toLowerCase();
+      if (!id) return ctx.reply('Uso: iskequipar <item>');
+      const r = economy.equip(n.data, id);
+      if (!r.ok) return ctx.reply(r.msg);
+      save(ctx, n.group, n.data);
+      await ctx.reply('Equipado: ' + r.item.name + ' (' + r.slot + ')');
+    }},
+  { name: 'iskdesequipar', aliases: ['iskunequip'], category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const slot = (argsOf(ctx)[0] || '').toLowerCase();
+      if (!slot) return ctx.reply('Uso: iskdesequipar <slot|item>\nSlots: arma peito cabeca pes maos escudo anel amuleto colar');
+      const r = economy.unequip(n.data, slot);
+      if (!r.ok) return ctx.reply(r.msg);
+      save(ctx, n.group, n.data);
+      await ctx.reply('Desequipado: ' + r.slot);
+    }},
+  { name: 'iskcraft', aliases: ['iskcraftar', 'iskreceitas'], category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const id = (argsOf(ctx)[0] || '').toLowerCase();
+      if (!id) {
+        let t = 'RECEITAS\n\n';
+        Object.keys(RECIPES).forEach(function (k) {
+          const r = RECIPES[k];
+          const mats = Object.keys(r.need).map(function (m) { return m + 'x' + r.need[m]; }).join(', ');
+          t += '- ' + k + ' -> ' + r.result + '\n  ' + mats + ' (nv' + r.level + ')\n';
+        });
+        t += '\nCraft: iskcraft <receita>';
+        return ctx.reply(t);
+      }
+      const r = economy.craft(n.data, id);
+      if (!r.ok) return ctx.reply(r.msg);
+      save(ctx, n.group, n.data);
+      const it = getItem(r.result);
+      await ctx.reply('Craft OK: ' + (it ? it.name : r.result) + ' x' + r.qty);
+    }}
+];

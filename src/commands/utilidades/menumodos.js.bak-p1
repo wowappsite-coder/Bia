@@ -1,0 +1,81 @@
+/**
+ * Menu Modos — internet, isekai e outros switches do grupo
+🎮 Menu WebGames
+ * 🎮 JOGOS WEB
+ */
+module.exports = [
+  {
+    name: 'menumodos',
+    aliases: [
+      'menumodo',
+      'menu modos',
+      'modos',
+      'menusistemas',
+      'menuswitch'
+    ],
+    category: 'utilidades',
+    description: 'Menu de modos (internet, isekai, etc.)',
+    handler: async (ctx) => {
+      // BEATRIZ_MENU_GATE_MODOS
+      try {
+        const { guardMenu } = require('../../utils/menuAccess');
+        if (!(await guardMenu(ctx, 'modos'))) return;
+      } catch (e) {
+        try {
+          const { guardMenu } = require('../../../utils/menuAccess');
+          if (!(await guardMenu(ctx, 'modos'))) return;
+        } catch (e2) {}
+      }
+
+      // MH_ADM_GATE
+      try {
+        var _ok = false;
+        try { if (typeof ctx.isOwner === 'function' && ctx.isOwner()) _ok = true; } catch (_e) {}
+        if (!_ok) {
+          try { if (typeof ctx.isGroupAdmin === 'function' && await ctx.isGroupAdmin()) _ok = true; } catch (_e2) {}
+        }
+        if (!_ok) {
+          return ctx.reply('🔒 *Menu Modos* so para *ADM* e *Owner*.');
+        }
+      } catch (_g) {}
+
+      const text =
+        '╭──〔 ⚙️ 𝐌𝐄𝐍𝐔 𝐌𝐎𝐃𝐎𝐒 〕──╮\n' +
+        '> Ativa/desativa funcoes por grupo\n' +
+        '❀────────────────❀\n' +
+        '\n' +
+        '╭──〔 🌐 𝐈𝐍𝐓𝐄𝐑𝐍𝐄𝐓 〕──╮\n' +
+        '◈┃ *modointernet on* — so internet\n' +
+        '◈┃ *modointernet off* — modo normal\n' +
+        '◈┃ *modointernet* — ver estado\n' +
+        '╰──────────────────╯\n' +
+        '\n' +
+        '╭──〔 🌌 𝐈𝐒𝐄𝐊𝐀𝐈 〕──╮\n' +
+        '◈┃ *iskmenu* — menu Isekai\n' +
+        '◈┃ *iskiniciar* — criar personagem\n' +
+        '◈┃ *iskstatus* — ver personagem\n' +
+        '◈┃ *iskdica* — dica do Rafael\n' +
+        '╰──────────────────╯\n' +
+        '\n' +
+        '╭──〔 🛡️ 𝐆𝐑𝐔𝐏𝐎 / 𝐒𝐄𝐆𝐔𝐑𝐀𝐍𝐂̧𝐀 〕──╮\n' +
+        '◈┃ *bemvindo on/off* — boas-vindas\n' +
+        '◈┃ *antistatus on/off*\n' +
+      '◇┃ 📚 *menupesquisa* — Menu Pesquisa\n' +
+'◇┃ 🔥 *menuhentai* — Menu Hentai 18+\n' +
+'◇┃    *mhadm on/off* — hentai so ADM\n' +
+
+
+        '◈┃ *antilink on/off*\n' +
+        '◈┃ *antiimg on/off*\n' +
+        '╰──────────────────╯\n' +
+        '\n' +
+        '╭──〔 💡 𝐃𝐈𝐂𝐀 〕──╮\n' +
+        '◈┃ Modo Internet: so comandos de net\n' +
+        '◈┃ Isekai: RPG separado (prefixo isk)\n' +
+        '◈┃ Seguranca: so ADM/dono liga\n' +
+        '╰──────────────────╯\n' +
+        '❀────────────────❀';
+      await ctx.reply(text);
+    }
+  }
+];

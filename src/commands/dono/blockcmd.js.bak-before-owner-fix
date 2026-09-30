@@ -1,0 +1,178 @@
+const { isOwnerJid } = require('../../utils/ownerCheck');
+/**
+ * blockcmd  — grupo (Owner + Admin do grupo)
+ * blockcmdg — global (só Owner)
+ */
+const db = require('../../database');
+const { getSetting, setSetting } = db;
+const registry = require('../registry');
+
+function normalizeName(s) {
+  return String(s || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^[.!#]/, '');
+}
+
+function resolveCmdName(input) {
+  const n = normalizeName(input);
+  if (!n) return null;
+  try {
+    const hit = registry.get(n);
+    if (hit && hit.name) return hit.name;
+  } catch (_) {}
+  return n;
+}
+
+async function isOwner(ctx) {
+  try {
+    if (typeof ctx.isOwner = (== 'function' && ctx.isOwner()) return true) || (typeof isOwnerJid==='function' && isOwnerJid(ctx.sender||ctx.senderJid||ctx.participant||'')); /* BTZ_OWNER_ASSIGN */
+  } catch (_) {}
+  return false;
+}
+
+async function isGroupAdminOrOwner(ctx) {
+  if (await isOwner(ctx)) return true;
+  try {
+    if (typeof ctx.isBotAdmin === 'function' && ctx.isBotAdmin()) return true;
+  } catch (_) {}
+  try {
+    if (typeof ctx.isGroupAdmin === 'function' && (await ctx.isGroupAdmin())) return true;
+  } catch (_) {}
+  return false;
+}
+
+const PROTECTED = [
+  'blockcmd', 'unblockcmd', 'blockcmdg', 'unblockcmdg',
+  'listbcmd', 'listbcmdg', 'bloquearcomando',
+  'menu', 'ping', 'owner', 'dono'
+];
+
+module.exports = [
+  {
+    name: 'blockcmd',
+    aliases: ['bloquearcomando', 'bcmd'],
+    category: 'dono',
+    description: 'Bloqueia comando só neste grupo (admin/dono)',
+    groupOnly: true,
+    usage: 'blockcmd ban',
+    handler: async (ctx) => {
+      if (!(await isGroupAdminOrOwner(ctx))) {
+        return ctx.reply('❌ Só *admin do grupo* ou *dono* do bot.');
+      }
+      const cmd = resolveCmdName(ctx.args[0]);
+      if (!cmd) return ctx.reply('❌ Use: *blockcmd nome*\nEx: *blockcmd ban*');
+      if (PROTECTED.includes(cmd)) {
+        return ctx.reply('❌ Esse comando não pode ser bloqueado.');
+      }
+      const g = ctx.group || {};
+      let list = [];
+      try { list = JSON.parse(g.blocked_cmds || '[]'); } catch (_) {}
+      if (!list.includes(cmd)) list.push(cmd);
+      db.updateGroup(ctx.jid, { blocked_cmds: JSON.stringify(list) });
+      await ctx.reply('✅ *' + cmd + '* bloqueado *neste grupo*.\nVer: *listbcmd*');
+    }
+  },
+  {
+    name: 'unblockcmd',
+    aliases: ['desbloquearcomando', 'ubcmd'],
+    category: 'dono',
+    description: 'Desbloqueia comando neste grupo (admin/dono)',
+    groupOnly: true,
+    handler: async (ctx) => {
+      if (!(await isGroupAdminOrOwner(ctx))) {
+        return ctx.reply('❌ Só *admin do grupo* ou *dono* do bot.');
+      }
+      const cmd = resolveCmdName(ctx.args[0]);
+      if (!cmd) return ctx.reply('❌ Use: *unblockcmd nome*');
+      const g = ctx.group || {};
+      let list = [];
+      try { list = JSON.parse(g.blocked_cmds || '[]'); } catch (_) {}
+      list = list.filter(function (c) { return c !== cmd; });
+      db.updateGroup(ctx.jid, { blocked_cmds: JSON.stringify(list) });
+      await ctx.reply('✅ *' + cmd + '* desbloqueado neste grupo.');
+    }
+  },
+  {
+    name: 'listbcmd',
+    aliases: ['listabcmd', 'cmdsbloqueados'],
+    category: 'dono',
+    description: 'Lista comandos bloqueados neste grupo',
+    groupOnly: true,
+    handler: async (ctx) => {
+      const g = ctx.group || {};
+      let list = [];
+      try { list = JSON.parse(g.blocked_cmds || '[]'); } catch (_) {}
+      if (!list.length) return ctx.reply('📋 Nenhum comando bloqueado *neste grupo*.');
+      await ctx.reply(
+        '🚫 *Bloqueados neste grupo:*\n' +
+          list.map(function (c) { return '• ' + c; }).join('\n')
+      );
+    }
+  },
+  {
+    name: 'blockcmdg',
+    aliases: ['bloquearcomandog', 'bcmdg'],
+    category: 'dono',
+    description: 'Bloqueia comando em TODOS os grupos (só dono)',
+    ownerOnly: true,
+    usage: 'blockcmdg ban',
+    handler: async (ctx) => {
+      if (!(await isOwner(ctx))) {
+        return ctx.reply('❌ *blockcmdg* é só do *dono* do bot.');
+      }
+      const cmd = resolveCmdName(ctx.args[0]);
+      if (!cmd) return ctx.reply('❌ Use: *blockcmdg nome*\nEx: *blockcmdg play*');
+      if (PROTECTED.includes(cmd)) {
+        return ctx.reply('❌ Esse comando não pode ser bloqueado.');
+      }
+      let list = [];
+      try { list = JSON.parse(getSetting('blocked_cmds_global', '[]') || '[]'); } catch (_) {}
+      if (!Array.isArray(list)) list = [];
+      if (!list.includes(cmd)) list.push(cmd);
+      setSetting('blocked_cmds_global', JSON.stringify(list));
+      await ctx.reply('✅ *' + cmd + '* bloqueado em *TODOS os grupos*.\nVer: *listbcmdg*');
+    }
+  },
+  {
+    name: 'unblockcmdg',
+    aliases: ['desbloquearcomandog', 'ubcmdg'],
+    category: 'dono',
+    description: 'Desbloqueia comando global (só dono)',
+    ownerOnly: true,
+    handler: async (ctx) => {
+      if (!(await isOwner(ctx))) {
+        return ctx.reply('❌ *unblockcmdg* é só do *dono* do bot.');
+      }
+      const cmd = resolveCmdName(ctx.args[0]);
+      if (!cmd) return ctx.reply('❌ Use: *unblockcmdg nome*');
+      let list = [];
+      try { list = JSON.parse(getSetting('blocked_cmds_global', '[]') || '[]'); } catch (_) {}
+      if (!Array.isArray(list)) list = [];
+      list = list.filter(function (c) { return c !== cmd; });
+      setSetting('blocked_cmds_global', JSON.stringify(list));
+      await ctx.reply('✅ *' + cmd + '* desbloqueado globalmente.');
+    }
+  },
+  {
+    name: 'listbcmdg',
+    aliases: ['listabcmdg', 'cmdsbloqueadosg'],
+    category: 'dono',
+    description: 'Lista bloqueios globais (só dono)',
+    ownerOnly: true,
+    handler: async (ctx) => {
+      if (!(await isOwner(ctx))) {
+        return ctx.reply('❌ Só o dono.');
+      }
+      let list = [];
+      try { list = JSON.parse(getSetting('blocked_cmds_global', '[]') || '[]'); } catch (_) {}
+      if (!Array.isArray(list) || !list.length) {
+        return ctx.reply('📋 Nenhum comando bloqueado *global*.');
+      }
+      await ctx.reply(
+        '🚫 *Bloqueados em TODOS os grupos:*\n' +
+          list.map(function (c) { return '• ' + c; }).join('\n')
+      );
+    }
+  }
+];

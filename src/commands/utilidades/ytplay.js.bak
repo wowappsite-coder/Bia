@@ -1,0 +1,215 @@
+const { execFile } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+function findYtDlp() {
+  const candidates = [
+    'yt-dlp',
+    path.join(process.env.HOME || '', '.local/bin/yt-dlp'),
+    path.join(process.env.HOME || '', 'bin/yt-dlp'),
+    '/data/data/com.termux/files/usr/bin/yt-dlp'
+  ];
+  for (const c of candidates) {
+    try {
+      if (c === 'yt-dlp') return 'yt-dlp';
+      if (fs.existsSync(c)) return c;
+    } catch (_) {}
+  }
+  return 'yt-dlp';
+}
+
+function run(cmd, args, opts = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, {
+      timeout: opts.timeout || 180000,
+      maxBuffer: 25 * 1024 * 1024,
+      env: { ...process.env, PATH: (process.env.HOME || '') + '/.local/bin:' + (process.env.PATH || '') }
+    }, (err, stdout, stderr) => {
+      if (err) {
+        const msg = (stderr || err.message || '').toString().slice(0, 400);
+        reject(new Error(msg || 'yt-dlp falhou'));
+        return;
+      }
+      resolve(stdout || '');
+    });
+  });
+}
+
+function safeName(s) {
+  return String(s || 'musica')
+    .replace(/[^\w\s\-\u00C0-\u024F]/gi, '')
+    .trim()
+    .slice(0, 80) || 'musica';
+}
+
+async function searchAndDownload(query, outDir) {
+  const bin = findYtDlp();
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+  const stamp = Date.now();
+  const outTpl = path.join(outDir, 'ytplay_' + stamp + '.%(ext)s');
+
+  // metadados (json)
+  let infoRaw = '';
+  try {
+    infoRaw = await run(bin, [
+      'ytsearch1:' + query,
+      '--dump-json',
+      '--no-playlist',
+      '--no-warnings',
+      '--skip-download'
+    ], { timeout: 60000 });
+  } catch (e) {
+    throw new Error('Nao encontrei essa musica. Tenta outro nome.');
+  }
+
+  let info;
+  try {
+    info = JSON.parse(infoRaw.split('\n').find(l => l.trim().startsWith('{')) || infoRaw);
+  } catch (_) {
+    throw new Error('Falha ao ler dados da musica.');
+  }
+
+  const title = info.title || query;
+  const artist = (info.artist || info.uploader || info.channel || 'YouTube').toString();
+  const webpage = info.webpage_url || info.original_url || '';
+  const thumb = info.thumbnail || (info.thumbnails && info.thumbnails.length
+    ? info.thumbnails[info.thumbnails.length - 1].url
+    : null);
+  const videoId = info.id || '';
+
+  // download so audio
+  await run(bin, [
+    videoId ? ('https://www.youtube.com/watch?v=' + videoId) : ('ytsearch1:' + query),
+    '-f', 'bestaudio/best',
+    '-x',
+    '--audio-format', 'mp3',
+    '--audio-quality', '128K',
+    '--no-playlist',
+    '--no-warnings',
+    '-o', outTpl
+  ], { timeout: 180000 });
+
+  const files = fs.readdirSync(outDir)
+    .filter(f => f.startsWith('ytplay_' + stamp))
+    .map(f => path.join(outDir, f));
+
+  if (!files.length) throw new Error('Download concluido mas ficheiro nao encontrado.');
+
+  const audioPath = files.find(f => /\.(mp3|m4a|opus|webm)$/i.test(f)) || files[0];
+
+  // capa
+  let thumbBuf = null;
+  if (thumb) {
+    try {
+      const https = require('https');
+      const http = require('http');
+      thumbBuf = await new Promise((resolve, reject) => {
+        const lib = thumb.startsWith('https') ? https : http;
+        const req = lib.get(thumb, { timeout: 15000 }, (res) => {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            const lib2 = res.headers.location.startsWith('https') ? https : http;
+            lib2.get(res.headers.location, { timeout: 15000 }, (res2) => {
+              const chunks = [];
+              res2.on('data', c => chunks.push(c));
+              res2.on('end', () => resolve(Buffer.concat(chunks)));
+            }).on('error', reject);
+            return;
+          }
+          const chunks = [];
+          res.on('data', c => chunks.push(c));
+          res.on('end', () => resolve(Buffer.concat(chunks)));
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('thumb timeout')); });
+      });
+      if (!thumbBuf || thumbBuf.length < 100) thumbBuf = null;
+    } catch (_) {
+      thumbBuf = null;
+    }
+  }
+
+  return { audioPath, title, artist, webpage, thumbBuf };
+}
+
+function cleanup(dir, stampPrefix) {
+  try {
+    if (!fs.existsSync(dir)) return;
+    for (const f of fs.readdirSync(dir)) {
+      if (f.startsWith(stampPrefix)) {
+        try { fs.unlinkSync(path.join(dir, f)); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+
+module.exports = {
+  name: 'ytplay',
+  aliases: ['ytmusica', 'playyt', 'tocar'],
+  category: 'utilidades',
+  description: 'Pesquisa no YouTube e toca a musica com capa',
+  async handler(ctx) {
+    const query = (ctx.args || []).join(' ').trim();
+    if (!query) {
+      return ctx.reply('Uso: *ytplay nome da musica*\nEx: ytplay sad girl lana del rey');
+    }
+
+    const outDir = path.join(process.cwd(), 'tmp', 'ytplay');
+    const stamp = 'ytplay_';
+    let statusMsg = null;
+
+    try {
+      try {
+        statusMsg = await ctx.reply('⏳ Processando, por favor aguarde um momento...', { skipDelay: true });
+      } catch (_) {}
+
+      const result = await searchAndDownload(query, outDir);
+      const audioBuf = fs.readFileSync(result.audioPath);
+
+      // apaga status se der
+      try {
+        if (statusMsg && statusMsg.key && ctx.sock) {
+          await ctx.sock.sendMessage(ctx.jid, { delete: statusMsg.key });
+        }
+      } catch (_) {}
+
+      const content = {
+        audio: audioBuf,
+        mimetype: 'audio/mpeg',
+        fileName: safeName(result.title) + '.mp3',
+        ptt: false
+      };
+
+      if (result.thumbBuf) {
+        content.contextInfo = {
+          externalAdReply: {
+            title: String(result.title).slice(0, 100),
+            body: String(result.artist).slice(0, 80),
+            mediaType: 1,
+            thumbnail: result.thumbBuf,
+            sourceUrl: result.webpage || undefined,
+            renderLargerThumbnail: true
+          }
+        };
+      }
+
+      await ctx.sendMessage(ctx.jid, content);
+
+      // limpeza
+      try {
+        fs.unlinkSync(result.audioPath);
+      } catch (_) {}
+      cleanup(outDir, path.basename(result.audioPath).split('.')[0]);
+
+    } catch (e) {
+      const msg = (e && e.message) ? e.message : 'Erro ao processar musica.';
+      try {
+        if (statusMsg && statusMsg.key && ctx.sock) {
+          await ctx.sock.sendMessage(ctx.jid, { delete: statusMsg.key });
+        }
+      } catch (_) {}
+      return ctx.reply('❌ ' + msg.slice(0, 300));
+    }
+  }
+};

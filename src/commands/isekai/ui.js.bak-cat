@@ -1,0 +1,104 @@
+const isekaiDb = require('../../isekai/db');
+const ui = require('../../isekai/ui');
+let combat = null;
+try { combat = require('../../isekai/combat'); } catch (_) {}
+
+function need(ctx) {
+  const g = isekaiDb.scopeGroup(ctx);
+  const d = isekaiDb.getPlayerData(ctx.sender, g);
+  if (!d || !d.race) return { ok: false, msg: null, data: null, group: g };
+  return { ok: true, data: d, group: g };
+}
+
+function argCat(ctx) {
+  let a = '';
+  if (ctx.args && ctx.args[0]) a = String(ctx.args[0]).toLowerCase();
+  else {
+    const t = String(ctx.text || '').trim().split(/\s+/);
+    a = (t[0] || '').toLowerCase();
+  }
+  if (!a || a === 'inicio' || a === 'voltar' || a === 'home') return null;
+  return ui.CAT_ALIASES[a] || (ui.MENU_CATS[a] ? a : a);
+}
+
+module.exports = [
+  {
+    name: 'iskmenu',
+    aliases: ['iskpainel_menu', 'iskhelp_menu'],
+    category: 'isekai',
+    handler: async (ctx) => {
+      const cat = argCat(ctx);
+      if (cat && ui.MENU_CATS[cat]) {
+        return ctx.reply(ui.formatSubMenu(cat));
+      }
+      if (cat && !ui.MENU_CATS[cat]) {
+        return ctx.reply(
+          'Categoria desconhecida: ' + cat +
+          '\n\nCategorias:\n' + ui.listAllCategories().join(', ') +
+          '\n\nEx: iskmenu aventura'
+        );
+      }
+      const n = need(ctx);
+      await ctx.reply(ui.formatMainMenu(n.data));
+    }
+  },
+  {
+    name: 'iskstatus',
+    aliases: ['iskficha', 'iskperfil'],
+    category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx);
+      if (!n.ok || !n.data) return ctx.reply('Cria personagem: iskiniciar Nome');
+      let msg = ui.formatStatus(n.data);
+      if (combat) {
+        try {
+          const b = combat.getBattle(ctx.sender, n.group);
+          if (b && b.enemy) msg += '\n\n' + ui.formatCombat(n.data, b);
+        } catch (_) {}
+      }
+      await ctx.reply(msg);
+    }
+  },
+  {
+    name: 'iskdica',
+    aliases: ['iskoquefazer', 'iskassistente'],
+    category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx);
+      if (!n.ok || !n.data) return ctx.reply('Cria personagem: iskiniciar Nome');
+      await ctx.reply(ui.assistant(n.data, 'geral'));
+    }
+  },
+  {
+    name: 'iskajuda',
+    aliases: ['iskhelp'],
+    category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx);
+      if (!n.ok || !n.data) {
+        return ctx.reply(
+          '🌌 MODO ISEKAI\n1. iskiniciar Nome\n2. iskmenu\n3. iskdica\n\nBot antigo: menu'
+        );
+      }
+      await ctx.reply(
+        ui.assistant(n.data, 'geral') +
+        '\n\n✦ Central: *iskmenu*\nCategorias: *iskmenu aventura*'
+      );
+    }
+  },
+  {
+    name: 'iskpainel',
+    category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx);
+      if (!n.ok || !n.data) return ctx.reply('Cria personagem: iskiniciar Nome');
+      if (combat) {
+        try {
+          const b = combat.getBattle(ctx.sender, n.group);
+          if (b) return ctx.reply(ui.formatCombat(n.data, b));
+        } catch (_) {}
+      }
+      await ctx.reply(ui.formatStatus(n.data));
+    }
+  }
+];

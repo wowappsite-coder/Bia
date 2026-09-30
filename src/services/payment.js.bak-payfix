@@ -1,0 +1,301 @@
+const { getDb } = require('../database');
+const fs = require('fs');
+const path = require('path');
+
+const PENDING_FILE = path.join(__dirname, '../../data/pending_megas.json');
+
+function loadPending() {
+  try {
+    if (!fs.existsSync(PENDING_FILE)) return {};
+    return JSON.parse(fs.readFileSync(PENDING_FILE, 'utf8') || '{}');
+  } catch (_) { return {}; }
+}
+function savePending(data) {
+  try {
+    fs.mkdirSync(path.dirname(PENDING_FILE), { recursive: true });
+    fs.writeFileSync(PENDING_FILE, JSON.stringify(data, null, 2));
+  } catch (e) { console.error('[pending]', e.message); }
+}
+function pendKey(g, s) { return String(g || '') + '|' + String(s || ''); }
+
+function setPendingMegas(groupJid, senderJid, info) {
+  const all = loadPending();
+  all[pendKey(groupJid, senderJid)] = Object.assign({}, info, {
+    senderJid: senderJid,
+    groupJid: groupJid,
+    createdAt: Date.now()
+  });
+  savePending(all);
+}
+function getPendingMegas(groupJid, senderJid) {
+  const all = loadPending();
+  const row = all[pendKey(groupJid, senderJid)];
+  if (!row) return null;
+  if (Date.now() - (row.createdAt || 0) > 2 * 60 * 60 * 1000) {
+    delete all[pendKey(groupJid, senderJid)];
+    savePending(all);
+    return null;
+  }
+  return row;
+}
+function clearPendingMegas(groupJid, senderJid) {
+  const all = loadPending();
+  delete all[pendKey(groupJid, senderJid)];
+  savePending(all);
+}
+
+function analyzePayment(paymentData, senderJid) {
+  const database = getDb();
+  const transactionId = paymentData.transactionId;
+  const value = paymentData.value;
+  const fee = paymentData.fee;
+  const destinationNumber = paymentData.destinationNumber;
+  const destinationName = paymentData.destinationName;
+  const provider = paymentData.provider;
+  const date = paymentData.date;
+  const time = paymentData.time;
+  const raw = paymentData.raw;
+
+  if (transactionId) {
+    try {
+      const existing = database.prepare('SELECT * FROM payments WHERE transaction_id = ?').get(transactionId);
+      if (existing) {
+        return {
+          status: 'PAGAMENTO_JA_UTILIZADO',
+          message: 'Esta transacao ja foi utilizada.',
+          payment: existing
+        };
+      }
+    } catch (_) {}
+  }
+
+  let order = null;
+  try {
+    const pendingOrders = database.prepare("SELECT * FROM orders WHERE status = 'pending' ORDER BY created_at DESC").all();
+    for (let i = 0; i < pendingOrders.length; i++) {
+      const o = pendingOrders[i];
+      let score = 0;
+      if (value && Math.abs(o.value_expected - value) < 0.01) score += 3;
+      if (score >= 3) { order = o; break; }
+    }
+  } catch (_) {}
+
+  let status = 'PAGAMENTO_INVALIDO';
+  let message = 'Pagamento nao confirmado.';
+  if (value && transactionId) {
+    status = 'PAGAMENTO_VALIDO';
+    message = 'Pagamento confirmado com sucesso!';
+  } else if (value) {
+    status = 'PAGAMENTO_SUSPEITO';
+    message = 'Pagamento em analise.';
+  }
+
+  let paymentRecord = null;
+  try {
+    const insert = database.prepare(
+      'INSERT INTO payments (order_id, transaction_id, provider, value_received, fee, destination_number, destination_name, date, time, raw_message, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    const info = insert.run(
+      order ? order.id : null,
+      transactionId || null,
+      provider,
+      value || null,
+      fee || null,
+      destinationNumber || null,
+      destinationName || null,
+      date || null,
+      time || null,
+      raw,
+      status
+    );
+    if (status === 'PAGAMENTO_VALIDO' && order) {
+      try { database.prepare("UPDATE orders SET status = 'paid' WHERE id = ?").run(order.id); } catch (_) {}
+    }
+    paymentRecord = database.prepare('SELECT * FROM payments WHERE id = ?').get(info.lastInsertRowid);
+  } catch (e) {
+    console.error('[analyzePayment]', e.message);
+  }
+  return { status: status, message: message, payment: paymentRecord, order: order };
+}
+
+function formatDetectionReply(paymentData, analysis) {
+  const provider = paymentData.provider;
+  const transactionId = paymentData.transactionId;
+  const value = paymentData.value;
+  const destinationNumber = paymentData.destinationNumber;
+  const date = paymentData.date;
+  const time = paymentData.time;
+  const provName = ({ mpesa: 'M-Pesa', emola: 'E-Mola', mkash: 'M-Kash' })[provider] || (provider || 'Mobile Money');
+
+  if (analysis.status === 'PAGAMENTO_JA_UTILIZADO') {
+    return '⚠️ *TRANSACAO JA UTILIZADA*\n\nEste comprovativo ja foi registado antes.';
+  }
+  if (analysis.status === 'PAGAMENTO_VALIDO') {
+    let text = '💳 *PAGAMENTO APROVADO!* ✅\n\n';
+    if (value != null) text += '💰 Valor: *' + Number(value).toFixed(2) + ' MT*\n';
+    text += '🏦 Operadora: *' + provName + '*\n';
+    if (destinationNumber) text += '📱 Número destino: *' + destinationNumber + '*\n';
+    if (date || time) text += '🕐 Data/Hora: ' + (date || '') + (time ? ' às ' + time : '') + '\n';
+    if (transactionId) text += '🆔 Transação: *' + transactionId + '*\n';
+    text += '\n✅ Pagamento confirmado com sucesso!\n\n';
+    text += '📱 Agora envie o *número* que vai receber os megas.\n';
+    text += '⚠️ O número deve ter *9 dígitos* e começar com *84* ou *85*.\n';
+    text += 'Ex: *852900000*';
+    return text;
+  }
+  let text = '🧾 *Comprovativo (' + provName + ')*\n\n';
+  if (transactionId) text += '🔑 ' + transactionId + '\n';
+  if (value != null) text += '💵 ' + Number(value).toFixed(2) + ' MT\n';
+  text += '\n' + (analysis.message || '');
+  return text;
+}
+
+function extractMegasNumber(text) {
+  if (!text) return null;
+  const digits = String(text).replace(/\D/g, '');
+  if (digits.length === 12 && digits.indexOf('258') === 0) {
+    const n = digits.slice(3);
+    if (/^8[45]\d{7}$/.test(n)) return n;
+  }
+  if (digits.length === 9 && /^8[45]\d{7}$/.test(digits)) return digits;
+  return null;
+}
+
+function onlyDigits(s) {
+  return String(s || '').replace(/\D/g, '');
+}
+
+function collectBotIds(sock) {
+  const ids = new Set();
+  try {
+    const u = sock.user || {};
+    const candidates = [u.id, u.lid, u.phone, u.wid].filter(Boolean);
+    for (let i = 0; i < candidates.length; i++) {
+      const raw = String(candidates[i]);
+      ids.add(raw);
+      ids.add(raw.split(':')[0]);
+      const bare = raw.split('@')[0].split(':')[0];
+      if (bare) {
+        ids.add(bare);
+        ids.add(bare + '@s.whatsapp.net');
+        ids.add(bare + '@lid');
+        ids.add(onlyDigits(bare));
+      }
+    }
+  } catch (_) {}
+  // numero do bot no .env / config se existir
+  try {
+    const config = require('../config');
+    const nums = [config.botNumber, config.ownerNumber, config.ownerDisplay].filter(Boolean);
+    for (let i = 0; i < nums.length; i++) {
+      const d = onlyDigits(nums[i]);
+      if (d) {
+        ids.add(d);
+        ids.add(d + '@s.whatsapp.net');
+        if (d.indexOf('258') === 0 && d.length > 9) {
+          const local = d.slice(3);
+          ids.add(local);
+          ids.add(local + '@s.whatsapp.net');
+        }
+      }
+    }
+  } catch (_) {}
+  return ids;
+}
+
+function isBotParticipant(p, botIds, sock) {
+  const id = String(p.id || '');
+  if (botIds.has(id)) return true;
+  if (botIds.has(id.split(':')[0])) return true;
+  const bare = id.split('@')[0].split(':')[0];
+  if (bare && botIds.has(bare)) return true;
+  if (bare && botIds.has(onlyDigits(bare))) return true;
+  if (p.phoneNumber && botIds.has(onlyDigits(p.phoneNumber))) return true;
+  if (p.jid && botIds.has(String(p.jid))) return true;
+
+  // Nome do perfil no grupo (LID nao bate com user.id)
+  const name = String(p.name || p.notify || p.verifiedName || p.pushName || '').toLowerCase().trim();
+  if (name) {
+    if (name === 'beatriz bot') return true;
+    if (name.indexOf('beatriz') !== -1 && name.indexOf('bot') !== -1) return true;
+  }
+  // nome da conta ligada
+  try {
+    const myName = String((sock.user && (sock.user.name || sock.user.notify)) || '').toLowerCase().trim();
+    if (myName && name && myName === name) return true;
+  } catch (_) {}
+  return false;
+}
+
+async function handlePendingNumber(sock, msg, sender, jid, text) {
+  const pending = getPendingMegas(jid, sender);
+  if (!pending) return false;
+
+  const num = extractMegasNumber(text);
+  if (!num) {
+    if (/^\s*\+?\d[\d\s\-]{6,}\s*$/.test(String(text || ''))) {
+      await sock.sendMessage(jid, {
+        text: '⚠️ Número inválido.\nPrecisa de *9 dígitos* a começar por *84* ou *85*.\nEx: *852900000*'
+      }, { quoted: msg }).catch(function () {});
+      return true;
+    }
+    return false;
+  }
+
+  clearPendingMegas(jid, sender);
+
+  const botIds = collectBotIds(sock);
+  console.log('[PENDING] botIds', Array.from(botIds).slice(0, 12));
+
+  let adminMentions = [];
+  try {
+    const meta = await sock.groupMetadata(jid);
+    const parts = meta.participants || [];
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      if (!(p.admin === 'admin' || p.admin === 'superadmin')) continue;
+      if (isBotParticipant(p, botIds, sock)) {
+        console.log('[PENDING] skip bot admin', p.id, p.name || p.notify);
+        continue;
+      }
+      adminMentions.push(p.id);
+    }
+  } catch (e) {
+    console.error('[admins]', e.message);
+  }
+
+  const buyerTag = '@' + String(sender).split('@')[0];
+  let admTags = '';
+  for (let i = 0; i < adminMentions.length; i++) {
+    if (i) admTags += ' ';
+    admTags += '@' + String(adminMentions[i]).split('@')[0];
+  }
+
+  const valor = pending.value != null ? Number(pending.value).toFixed(2) + ' MT' : '—';
+
+  let body = '✅ *COMPRA CONFIRMADA*\n\n';
+  body += '👤 Comprador: ' + buyerTag + '\n';
+  body += '📱 Número para megas: *' + num + '*\n';
+  body += '💰 Valor pago: *' + valor + '*\n\n';
+  if (admTags) body += '🛡️ ADMs: ' + admTags + '\n\n';
+  body += '⏳ *Aguarde o ADM para receber os megas.*';
+
+  const mentions = [sender].concat(adminMentions);
+
+  await sock.sendMessage(jid, {
+    text: body,
+    mentions: mentions
+  }, { quoted: msg }).catch(function () {});
+
+  return true;
+}
+
+module.exports = {
+  analyzePayment: analyzePayment,
+  formatDetectionReply: formatDetectionReply,
+  setPendingMegas: setPendingMegas,
+  getPendingMegas: getPendingMegas,
+  clearPendingMegas: clearPendingMegas,
+  handlePendingNumber: handlePendingNumber,
+  extractMegasNumber: extractMegasNumber
+};

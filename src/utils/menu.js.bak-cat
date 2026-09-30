@@ -1,0 +1,153 @@
+/**
+ * Geração de menus a partir do registry real
+ */
+
+const registry = require('../commands/registry');
+const config = require('../config');
+
+const CATEGORY_META = {
+  dono: { emoji: '👑', title: 'MENU DONO' },
+  admin: { emoji: '🛡️', title: 'MENU ADM' },
+  grupo: { emoji: '👥', title: 'MENU GRUPO' },
+  internet: { emoji: '🌐', title: 'MENU INTERNET' },
+  bn: { emoji: '🎮', title: 'MENU BN' },
+  diversao: { emoji: '🎭', title: 'MENU DIVERSÃO' },
+  stickers: { emoji: '🎴', title: 'MENU STICKERS' },
+  imagem: { emoji: '🖼️', title: 'MENU IMAGEM' },
+  seguranca: { emoji: '🛡️', title: 'MENU SEGURANÇA' },
+  utilidades: { emoji: '🧰', title: 'MENU UTILIDADES' },
+  rpg: { emoji: '❤️', title: 'MENU RPG/FAMÍLIA' },
+  xp: { emoji: '⭐', title: 'MENU XP/RANK' },
+  economia: { emoji: '💰', title: 'MENU ECONOMIA' },
+  aluguel: { emoji: '🏠', title: 'MENU ALUGUEL' },
+  custom: { emoji: '✨', title: 'CUSTOM' },
+  outros: { emoji: '📦', title: 'OUTROS' }
+};
+
+function generateMainMenu() {
+  const stats = registry.stats();
+  const prefix = (config.prefixes && config.prefixes[0]) || '!';
+  let text = `╭──〔 𝐈𝐍𝐅𝐎 〕──╮
+> 𝐏𝐫𝐞𝐟𝐢𝐱𝐨: ${prefix}
+> 𝐄𝐱: ${prefix}𝐦𝐞𝐧𝐮
+> 𝐀𝐥𝐠𝐮𝐧𝐬 𝐜𝐨𝐦𝐚𝐧𝐝𝐨𝐬 𝐩𝐨𝐝𝐞𝐦 𝐟𝐮𝐧𝐜𝐢𝐨𝐧𝐚𝐫 𝐬𝐞𝐦 𝐩𝐫𝐞𝐟𝐢𝐱𝐨
+> 𝐄𝐱: 𝐦𝐞𝐧𝐮
+❀────────────────❀
+╭──〔 🌸 𝐌𝐄𝐍𝐔𝐒 〕──╮
+◈┃👑 𝗠𝗲𝗻𝘂 𝗗𝗼𝗻𝗼
+◈┃🛡️ 𝗠𝗲𝗻𝘂 𝗔𝗗𝗠
+◈┃👥 𝗠𝗲𝗻𝘂 𝗚𝗿𝘂𝗽𝗼
+◈┃🌐 𝗠𝗲𝗻𝘂 𝗜𝗻𝘁𝗲𝗿𝗻𝗲𝘁
+◈┃🎮 𝗠𝗲𝗻𝘂 𝗕𝗡
+◈┃🎭 𝗠𝗲𝗻𝘂 𝗗𝗶𝘃𝗲𝗿𝘀ã𝗼
+◈┃🎴 𝗠𝗲𝗻𝘂 𝗦𝘁𝗶𝗰𝗸𝗲𝗿𝘀
+◈┃🎨 𝗠𝗲𝗻𝘂 𝗜𝗺𝗮𝗴𝗲𝗺
+◈┃🔐 𝗦𝗲𝗴𝘂𝗿𝗮𝗻ç𝗮
+◈┃🧰 𝗨𝘁𝗶𝗹𝗶𝗱𝗮𝗱𝗲𝘀
+◈┃❤️ 𝗥𝗣𝗚/𝗙𝗮𝗺𝗶𝗹𝗶𝗮
+◈┃⭐ 𝗫𝗣/𝗥𝗔𝗡𝗞
+◈┃💰 𝗘𝗰𝗼𝗻𝗼𝗺𝗶𝗮
+◈┃🏠 𝗔𝗹𝘂𝗴𝘂𝗲𝗹
+╰──────────────────╯
+╭──〔 𝐒𝐈𝐒𝐓𝐄𝐌𝐀 〕──╮
+*🥏┃${stats.totalMain} C͟O͟M͟A͟N͟D͟O͟S͟*
+*🥏┃P͟R͟E͟F͟I͟X͟O͟: ${prefix}*
+❀────────────────❀
+
+      ──〔 𝐁𝐄𝐀𝐓𝐑𝐈𝐙 𝐁𝐎𝐓 〕──`;
+
+  return text;
+}
+
+function generateCategoryMenu(category) {
+  const meta = CATEGORY_META[category] || { emoji: '📦', title: category.toUpperCase() };
+  const cmds = registry.getByCategory(category);
+
+  if (!cmds.length) {
+    return `❌ Nenhum comando na categoria *${meta.title}*`;
+  }
+
+  let text = `┏━━━━━━━━━━━━━━━━━━┓
+┃ ${meta.emoji} *${meta.title}*
+┣━━━━━━━━━━━━━━━━━━┫
+┃
+`;
+
+  // Agrupa visualmente
+  const sorted = cmds.sort((a, b) => a.name.localeCompare(b.name));
+  for (const cmd of sorted) {
+    const aliasStr = cmd.aliases.length ? ` (${cmd.aliases.slice(0, 2).join(', ')})` : '';
+    text += `┃ ${config.prefixes[0]}${cmd.name}${aliasStr}\n`;
+  }
+
+  text += `┃
+┣━━━━━━━━━━━━━━━━━━┫
+┃ Total: ${cmds.length} comandos
+┗━━━━━━━━━━━━━━━━━━┛`;
+
+  return text;
+}
+
+// Comandos de submenu
+function registerMenuCommands() {
+  const cats = Object.keys(CATEGORY_META);
+  for (const cat of cats) {
+    if (cat === 'custom' || cat === 'outros') continue;
+    registry.register({
+      name: `menu${cat}`,
+      aliases: [`menu ${cat}`, `menú${cat}`],
+      category: 'utilidades',
+      description: `Abre o menu ${cat}`,
+      handler: async (ctx) => {
+        await ctx.reply(generateCategoryMenu(cat));
+      }
+    });
+  }
+
+  // Atalhos comuns
+  const shortcuts = {
+    'menuadm': 'admin',
+    'menuadmin': 'admin',
+    'menubn': 'bn',
+    'menudono': 'dono',
+    'menugrupo': 'grupo',
+    'menuinternet': 'internet',
+    'menusticker': 'stickers',
+    'menustickers': 'stickers',
+    'menuimg': 'imagem',
+    'menuimagem': 'imagem',
+    'menuseguranca': 'seguranca',
+    'menurpg': 'rpg',
+    'menufamilia': 'rpg',
+    'menuxp': 'xp',
+    'menurank': 'xp',
+    'menueconomia': 'economia',
+    'menualuguel': 'aluguel',
+    'menudiversao': 'diversao',
+    'menuutilidades': 'utilidades',
+    'menutil': 'utilidades',
+    'menusticker': 'stickers',
+    'menufig': 'stickers',
+    'menufigurinhas': 'stickers'
+  };
+
+  for (const [name, cat] of Object.entries(shortcuts)) {
+    if (!registry.get(name)) {
+      registry.register({
+        name,
+        category: 'utilidades',
+        description: `Atalho menu ${cat}`,
+        handler: async (ctx) => {
+          await ctx.reply(generateCategoryMenu(cat));
+        }
+      });
+    }
+  }
+}
+
+module.exports = {
+  generateMainMenu,
+  generateCategoryMenu,
+  registerMenuCommands,
+  CATEGORY_META
+};

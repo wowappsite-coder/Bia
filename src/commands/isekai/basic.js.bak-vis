@@ -1,0 +1,129 @@
+const isekaiDb = require('../../isekai/db');
+const char = require('../../isekai/character');
+
+function needPlayer(ctx){
+  const g=isekaiDb.scopeGroup(ctx);
+  const d=isekaiDb.getPlayerData(ctx.sender,g);
+  if(!d||!d.race) return { ok:false, msg:'❌ Sem personagem.\n*iskiniciar SeuNome*' };
+  return { ok:true, data:d, group:g };
+}
+
+module.exports=[
+  {
+    name: 'iskmenu_legacy',
+    aliases: ['iskhelp_menu'],
+    category: 'isekai',
+    description: 'Menu completo Isekai',
+    handler: async (ctx) => {
+      let cat = '';
+      if (ctx.args && ctx.args[0]) cat = String(ctx.args[0]).toLowerCase();
+      else {
+        const parts = String(ctx.text || '').trim().split(/\s+/);
+        cat = (parts[0] || '').toLowerCase();
+      }
+      if (cat === 'inicio' || cat === 'voltar') cat = '';
+
+      const SUB = {
+        personagem: ['iskstatus', 'iskpersonagem', 'iskatributos', 'iskhabilidades', 'iskvidas', 'iskhistorico', 'isktitulos', 'iskconquistas', 'isknivel'],
+        aventura: ['isklutar', 'iskboss', 'iskdungeon', 'iskatacar', 'iskusar', 'iskdefender', 'iskfugir', 'iskduelo', 'iskbatalha', 'iskexplorar', 'isktreinar'],
+        inventario: ['iskinventario', 'iskequipar', 'iskdesequipar', 'iskconsumir', 'iskcraft'],
+        economia: ['isksaldo', 'iskloja', 'iskcomprar', 'iskvender'],
+        profissoes: ['iskprofissoes', 'iskfazenda', 'iskplantar', 'iskcolher', 'iskpescar', 'iskminerar', 'iskforjar', 'iskalquimia', 'iskcozinhar', 'iskmercador', 'isknobreza'],
+        guilda: ['iskguilda', 'iskguilda_entrar', 'iskquest', 'iskaceitarquest', 'iskqueststatus', 'iskconcluir', 'iskranking'],
+        mundo: ['iskmundo', 'iskmapa', 'isklocal', 'iskcidade', 'iskviajar', 'iskexplorar', 'iskeventos', 'iskrumores', 'iskreinos', 'iskhistoria', 'iskdescobrir'],
+        npcs: ['isknpc', 'iskfalar', 'iskrelacoes'],
+        social: ['iskrelacoes', 'iskdar', 'isknamorar', 'iskcasar', 'iskfamilia', 'iskescolhas', 'iskdecidir'],
+        party: ['iskparty', 'iskconvidar', 'iskexpulsar', 'iskacampamento'],
+        vida: ['iskferimentos', 'iskcura', 'iskmorte', 'isklegado', 'iskreencarnar', 'iskvidas'],
+        magia: ['iskmagia', 'iskescola', 'iskaula', 'isktreinar'],
+        divino: ['iskdeuses', 'iskorar', 'iskoferecer', 'iskpacto', 'iskbencaos', 'isktranscender', 'iskfavor'],
+        destino: ['iskdestino', 'iskalinhamento', 'iskheroi', 'iskvilao', 'iskreputacao'],
+        ranking: ['iskranking', 'isknivel'],
+        assistente: ['iskajuda', 'iskdica', 'iskpainel'],
+        sistema: ['iskiniciar', 'iskmodo', 'iskmodo_off']
+      };
+
+      const aliases = {
+        person: 'personagem', combate: 'aventura', inv: 'inventario', bag: 'inventario',
+        loja: 'economia', money: 'economia', farm: 'profissoes', quest: 'guilda',
+        mapa: 'mundo', romance: 'social', familia: 'social', morte: 'vida',
+        deuses: 'divino', ajuda: 'assistente', dica: 'assistente'
+      };
+      if (aliases[cat]) cat = aliases[cat];
+
+      if (cat && SUB[cat]) {
+        let t = '╭━━〔 ' + cat.toUpperCase() + ' 〕━━╮\n\n';
+        SUB[cat].forEach(function (c) { t += '◇ `' + c + '`\n'; });
+        t += '\n← iskmenu';
+        return ctx.reply(t);
+      }
+      if (cat) {
+        return ctx.reply('Categoria: personagem, aventura, inventario, economia, profissoes, guilda, mundo, npcs, social, party, vida, magia, divino, destino, ranking, assistente, sistema\n\nEx: iskmenu aventura');
+      }
+
+      let head = '╭━━━━━━━━━━━━━━━━━━━━╮\n┃  🌌 MODO ISEKAI 🌌  ┃\n┃   「 AVENTURE-SE 」  ┃\n╰━━━━━━━━━━━━━━━━━━━━╯\n\n';
+      try {
+        const isekaiDb = require('../../isekai/db');
+        const d = isekaiDb.getPlayerData(ctx.sender, isekaiDb.scopeGroup(ctx));
+        if (d && d.name) {
+          const race = (d.race && (d.race.name || d.race)) || '-';
+          const cls = (d.class && (d.class.name || d.class)) || '-';
+          head += '👤 ' + d.name + '\n🧬 ' + race + ' · ⚔️ ' + cls + '\n⭐ Nv ' + (d.level || 1) + ' · 🪙 ' + (d.iene || 0) + '\n\n';
+        }
+      } catch (_) {}
+
+      head +=
+        '✦ SISTEMA ISEKAI ✦\n' +
+        '━━━━━━━━━━━━━━━━━━━━\n' +
+        '🌌 personagem\n⚔️ aventura\n🎒 inventario\n💰 economia\n' +
+        '🌾 profissoes\n🏰 guilda\n🗺️ mundo\n👥 npcs\n' +
+        '❤️ social\n⚔️ party\n☠️ vida\n✨ magia\n' +
+        '🙏 divino\n👑 destino\n🏆 ranking\n🧠 assistente\n⚙️ sistema\n' +
+        '━━━━━━━━━━━━━━━━━━━━\n' +
+        'Abre: *iskmenu aventura*\n' +
+        '*iskmenu personagem*\n' +
+        '_Bot antigo: menu / loja_';
+      await ctx.reply(head);
+    }
+  },
+  { name:'iskiniciar', category:'isekai', description:'Cria personagem',
+    handler:async (ctx)=>{
+      const nome=(ctx.text||'').trim()||((ctx.args&&ctx.args.join(' '))||'').trim();
+      if(!nome||nome.length<2) return ctx.reply('❌ *iskiniciar SeuNome*');
+      if(nome.length>24) return ctx.reply('❌ Nome máx. 24.');
+      const g=isekaiDb.scopeGroup(ctx);
+      try{
+        const r=isekaiDb.createPlayer(ctx.sender,g,nome);
+        if(!r.ok) return ctx.reply('🚫 Já tens personagem: *'+((r.data&&r.data.name)||'?')+'*\nSem reroll grátis.\n*iskstatus*');
+        const d=r.data;
+        await ctx.reply('✨ *NASCIMENTO*\n\n👤 *'+d.name+'*\n🧬 '+d.race.name+' · ⚔️ '+d.class.name+'\n🍀 '+d.luckLabel+' · ✨ '+d.potentialLabel+'\n'+(d.affinity?d.affinity.emoji+' '+d.affinity.name+'\n':'')+'🏷️ '+d.title+'\n📜 '+d.origin+' · '+d.social+'\n\n*iskstatus* · *iskpersonagem*');
+      }catch(e){ await ctx.reply('❌ '+e.message); }
+    }
+  },
+  { name:'iskstatus', aliases:['iskperfil'], category:'isekai',
+    handler:async (ctx)=>{ const n=needPlayer(ctx); if(!n.ok) return ctx.reply(n.msg); await ctx.reply(char.formatStatus(n.data)); }
+  },
+  { name:'iskpersonagem', aliases:['iskficha'], category:'isekai',
+    handler:async (ctx)=>{ const n=needPlayer(ctx); if(!n.ok) return ctx.reply(n.msg); await ctx.reply(char.formatPersonagem(n.data)); }
+  },
+  { name:'iskhabilidades', aliases:['iskskills','iskskill'], category:'isekai',
+    handler:async (ctx)=>{ const n=needPlayer(ctx); if(!n.ok) return ctx.reply(n.msg); await ctx.reply(char.formatSkills(n.data)); }
+  },
+  { name:'iskatributos', aliases:['iskattrs','iskstats'], category:'isekai',
+    handler:async (ctx)=>{ const n=needPlayer(ctx); if(!n.ok) return ctx.reply(n.msg); await ctx.reply(char.formatAttrs(n.data)); }
+  },
+  { name:'iskmodo', category:'isekai', groupOnly:true, ownerOnly:true,
+    handler:async (ctx)=>{
+      try{ if(typeof ctx.isOwner==='function'&&!ctx.isOwner()) return ctx.reply('❌ Só o dono.'); }catch(_){}
+      isekaiDb.setIsekaiEnabled(ctx.jid,true);
+      await ctx.reply('🌍 *Modo Isekai ATIVADO*');
+    }
+  },
+  { name:'iskmodo_off', aliases:['iskmodooff'], category:'isekai', groupOnly:true, ownerOnly:true,
+    handler:async (ctx)=>{
+      try{ if(typeof ctx.isOwner==='function'&&!ctx.isOwner()) return ctx.reply('❌ Só o dono.'); }catch(_){}
+      isekaiDb.setIsekaiEnabled(ctx.jid,false);
+      await ctx.reply('⚪ *Modo Isekai DESATIVADO*');
+    }
+  }
+];

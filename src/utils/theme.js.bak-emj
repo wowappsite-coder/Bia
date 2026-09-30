@@ -1,0 +1,292 @@
+
+/* BTZ_MENU_GROUPS_V1 — so visual, nao cria comandos */
+function btzGroupCommands(category, cmds) {
+  const list = (cmds || []).filter(function (c) {
+    if (!c || c.hideFromMenu) return false;
+    const n = String(c.name || '').toLowerCase();
+    if (/^[0-9abc]$/i.test(n)) return false;
+    if (/^h[1-8]$/.test(n) || n === 'hep') return false;
+    return true;
+  });
+
+  const JOGO_KEYS = [
+    'jogodavelha','ttt','connect4','c4','forca','hangman','trivia','quiz','eununca',
+    'quemsueu','whoami','verdadeoudesafio','vod','ppt','jokenpo','moeda','coin','dado','dice',
+    'jogar','j1','j2','j3','j4','j5','j6','j7','j8','j9','aceitarvelha','recusarvelha',
+    'aceitarttt','recusarttt','aceitar4','recusar4','aceitac4','cancelar4','desistir','letra',
+    'responder','resposta','perguntaseu','question','rankingtrivia','ranktrivia','ngl','enviar',
+    'enviarppp','ppp','fc','resetefc','resetejdv','velha'
+  ];
+  const RANK_KEYS = [
+    'rankgado','rankgay','ranklindo','ranklinda','rankfeio','rankgostoso','rankgostosa',
+    'rankcorno','rankrico','rankpobre','rankotaku','rankbebado','rankpau','rankputa',
+    'rankputo','ranksafado','ranksafada','rankempresario','rankempresaria','ranknazista'
+  ];
+
+  function matchKeys(c, keys) {
+    const n = String(c.name || '').toLowerCase();
+    const als = (c.aliases || []).map(function (a) { return String(a).toLowerCase(); });
+    if (keys.indexOf(n) >= 0) return true;
+    for (let i = 0; i < als.length; i++) if (keys.indexOf(als[i]) >= 0) return true;
+    // prefixo rank*
+    if (keys === RANK_KEYS && n.indexOf('rank') === 0) return true;
+    return false;
+  }
+
+  const cat = String(category || '').toLowerCase();
+  const groups = [];
+
+  if (cat === 'bn' || cat === 'diversao' || cat === 'jogos') {
+    const ranks = list.filter(function (c) { return matchKeys(c, RANK_KEYS); });
+    const jogos = list.filter(function (c) { return matchKeys(c, JOGO_KEYS) && !matchKeys(c, RANK_KEYS); });
+    const used = {};
+    ranks.concat(jogos).forEach(function (c) { used[String(c.name).toLowerCase()] = 1; });
+    const inter = list.filter(function (c) { return !used[String(c.name).toLowerCase()]; });
+    if (inter.length) groups.push({ title: '🎯 INTERAÇÃO', items: inter });
+    if (jogos.length) groups.push({ title: '🎮 JOGOS', items: jogos });
+    if (ranks.length) groups.push({ title: '🎐 RANKS', items: ranks });
+  } else if (cat === 'admin') {
+    const modKeys = ['ban','kick','adv','advdel','advlist','advreset','mute','desmute','mutelist','hidetag','marcar','marcar2','promover','rebaixar','remover','add'];
+    const gpKeys = ['abrirgrupo','fechargrupo','linkgp','revlinkgp','nomegp','descgp','setregras','bemvindo','saida','modoadm'];
+    const mod = list.filter(function (c) { return matchKeys(c, modKeys); });
+    const gp = list.filter(function (c) { return matchKeys(c, gpKeys); });
+    const used = {};
+    mod.concat(gp).forEach(function (c) { used[String(c.name).toLowerCase()] = 1; });
+    const rest = list.filter(function (c) { return !used[String(c.name).toLowerCase()]; });
+    if (mod.length) groups.push({ title: '🛡️ MODERAÇÃO', items: mod });
+    if (gp.length) groups.push({ title: '👥 GRUPO', items: gp });
+    if (rest.length) groups.push({ title: '📦 OUTROS', items: rest });
+  } else if (cat === 'dono') {
+    const sysKeys = ['reiniciar','restart','desligar','shutdown','backup','logs','stats','setprefix'];
+    const cmdKeys = ['addcmd1','addcmd2','addcmd3','delcmd','editcmd','listcmd','addadmin','deladmin'];
+    const midKeys = ['setmedia','delmedia','listmedia','setaudio','delaudio','listaudio','migratemedia'];
+    const sys = list.filter(function (c) { return matchKeys(c, sysKeys); });
+    const cmds = list.filter(function (c) { return matchKeys(c, cmdKeys); });
+    const mid = list.filter(function (c) { return matchKeys(c, midKeys); });
+    const used = {};
+    sys.concat(cmds, mid).forEach(function (c) { used[String(c.name).toLowerCase()] = 1; });
+    const rest = list.filter(function (c) { return !used[String(c.name).toLowerCase()]; });
+    if (sys.length) groups.push({ title: '⚙️ SISTEMA', items: sys });
+    if (cmds.length) groups.push({ title: '📝 COMANDOS', items: cmds });
+    if (mid.length) groups.push({ title: '🖼️ MÍDIA', items: mid });
+    if (rest.length) groups.push({ title: '📦 OUTROS', items: rest });
+  } else {
+    // menus sem sub-regras: uma seccao unica (mantem ordem A-Z)
+    groups.push({ title: null, items: list.slice().sort(function (a, b) {
+      return String(a.name).localeCompare(String(b.name));
+    }) });
+  }
+
+  // ordenar items dentro de cada grupo
+  groups.forEach(function (g) {
+    g.items.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+  });
+  return groups;
+}
+
+/**
+ * Temas visuais por prefixo
+ * !  → tema "luxo" (novo)
+ * resto / sem prefixo → visual original
+ */
+
+function useNewTheme(ctx) {
+  try {
+    return String(ctx && ctx.prefix || '') === '!';
+  } catch (_) {
+    return false;
+  }
+}
+
+function line(ch, n) {
+  return String(ch).repeat(n);
+}
+
+/** Menu principal — tema ! */
+function mainMenuTheme(stats, botName, prefix, extra) {
+  const p = prefix || '!';
+  const orn = 'ঔৣֳ̤᷈͜͝͡';
+  const extraInfo = extra || {};
+  const mentionToken = extraInfo.mentionToken || 'user';
+  const ownerName = extraInfo.ownerName || 'Ebai';
+  let hora = extraInfo.hora;
+  if (!hora) {
+    const d = new Date();
+    hora = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  const total = (stats && stats.totalMain) != null ? stats.totalMain : '?';
+  const bot = botName || 'BEATRIZ BOT';
+  const L = [];
+
+  L.push('*╔═══━─❦ۜ✯ۣۜৡ ✧ ❖ ✧ ৡۣۜ✯ۜ─━━═╗*');
+  L.push('*║*  *╭━━✯ ❖ 𝐈𝐍𝐅𝐎𝐒 ❖ ✯━━╮*');
+  L.push('*║*  *│*');
+  L.push('*║*  *│  ' + orn + ' ✦ 𝗕𝗢𝗧: ' + bot + '*');
+  L.push('*║*  *│  ' + orn + ' ✦ 𝗨𝗦𝗨𝗔́𝗥𝗜𝗢:* @' + mentionToken);
+  L.push('*║*  *│  ' + orn + ' ✦ 𝗗𝗢𝗡𝗢: ' + ownerName + '*');
+  L.push('*║*  *│  ' + orn + ' ✦ 𝗣𝗥𝗘𝗙𝗜𝗫𝗢: [ ' + p + ' ]*');
+  L.push('*║*  *│  ' + orn + ' ✦ 𝗛𝗢𝗥𝗔: ' + hora + '*');
+  L.push('*║*  *│  ' + orn + ' ✦ 𝗖𝗢𝗠𝗔𝗡𝗗𝗢𝗦: ' + total + '*');
+  L.push('*║*  *│*');
+  L.push('*║*  *╰━━━ঔৣ͡➳ ✦ ❖ ✦ ➳ঔৣ͡━━━╯*');
+  L.push('*║*');
+  L.push('*║*  *╭━━✯ ❖ 𝐏𝐑𝐈𝐍𝐂𝐈𝐏𝐀𝐈𝐒 ❖ ✯━━╮*');
+  L.push('*║*  *│  ✦ ❖ ✧ ❖ ✦ ❖ ✧ ❖ ✦*');
+  L.push('*║*  *│*');
+
+  const menus = [
+    'menudono', 'menuadm', 'menugrupo', 'menuinternet',
+    'menubn', 'menudiversao', 'menufig', 'menuimg',
+    'menuseguranca', 'menuutilidades', 'menurpg', 'menuxp',
+    'menueconomia', 'menualuguel', 'menudownload', 'menuwebgames', 'menupesquisa', 'menumodos'
+  ];
+  for (let i = 0; i < menus.length; i++) {
+    L.push('*║*  *│  ' + orn + '💠 ' + p + menus[i] + '*');
+  }
+
+  L.push('*║*  *│*');
+  L.push('*║*  *│  ✦ ❖ ✧ ❖ ✦ ❖ ✧ ❖ ✦*');
+  L.push('*║*  *╰━━━ঔৣ͡➳ ✦ ❖ ✦ ➳ঔৣ͡━━━╯*');
+  L.push('*║*');
+  L.push('*║*  *╭━━✯ ❖ 𝐀𝐁𝐑𝐄𝐕𝐈𝐀𝐃𝐎𝐒 ❖ ✯━━╮*');
+  L.push('*║*  *│  ✧ ❖ ✦ ❖ ✧ ❖ ✦ ❖ ✧*');
+  L.push('*║*  *│*');
+  L.push('*║*  *│  ' + orn + '🔮 ' + p + 's | sticker*');
+  L.push('*║*  *│  ' + orn + '🔮 ' + p + 'd | delete*');
+  L.push('*║*  *│  ' + orn + '🔮 ' + p + 'p | play*');
+  L.push('*║*  *│  ' + orn + '🔮 ' + p + 'menu | este menu*');
+  L.push('*║*  *│  ' + orn + '🔮 ' + p + 'ping*');
+  L.push('*║*  *│  ' + orn + '🔮 ' + p + 'perfil*');
+  L.push('*║*  *│*');
+  L.push('*║*  *│  ✧ ❖ ✦ ❖ ✧ ❖ ✦ ❖ ✧*');
+  L.push('*║*  *╰━━━ঔৣ͡➳ ✦ ❖ ✦ ➳ঔৣ͡━━━╯*');
+  L.push('*╚══━━❦ۜ✯ۣۜৡ ✧ ❖ ✧ ৡۣۜ✯ۜ─━━══╝*');
+  L.push('');
+  L.push('*╔══━━❦ۜ✯ۣۜৡ ✧ ❖ ✧ ৡۣۜ✯ۜ─━━══╗*');
+  L.push('*『 𝐁𝐄𝐀𝐓𝐑𝐈𝐙 𝐁𝐎𝐓 』*');
+  L.push('*𝐃𝐨𝐧𝐨: Ebai · +258 874288439*');
+  L.push('*╚══━━❦ۜ✯ۣۜৡ ✧ ❖ ✧ ৡۣۜ✯ۜ─━━══╝*');
+
+  return L.join(String.fromCharCode(10));
+}
+
+
+
+
+function categoryMenuTheme(meta, cmds, prefix, category) {
+  const p = prefix || '!';
+  const title = (meta && meta.title) || 'MENU';
+  const orn = 'ঔৣֳ̤᷈͜͝͡';
+  const emojiMap = {
+    'MENU DONO': '👑', 'MENU ADM': '🛡️', 'MENU GRUPO': '👥', 'MENU INTERNET': '🌐',
+    'MENU BN': '🎮', 'MENU DIVERSÃO': '🎭', 'MENU STICKERS': '🎴', 'MENU IMAGEM': '🎨',
+    'MENU SEGURANÇA': '🔐', 'MENU UTILIDADES': '🧰', 'MENU RPG/FAMÍLIA': '❤️',
+    'MENU XP/RANK': '⭐', 'MENU ECONOMIA': '💰', 'MENU ALUGUEL': '🏠',
+    'MENU DOWNLOAD': '📥', 'MENU WEB GAMES': '🕹️', 'MENU MODOS': '⚙️'
+  };
+  let catEmoji = emojiMap[title] || (meta && meta.emoji) || '🔮';
+  const tl = String(title).toUpperCase();
+  if (!emojiMap[title]) {
+    if (tl.indexOf('BN') >= 0) catEmoji = '🎮';
+    else if (tl.indexOf('DIVERS') >= 0) catEmoji = '🎭';
+    else if (tl.indexOf('ADM') >= 0) catEmoji = '🛡️';
+    else if (tl.indexOf('DONO') >= 0) catEmoji = '👑';
+  }
+
+  const catKey = category || '';
+  const groups = typeof btzGroupCommands === 'function'
+    ? btzGroupCommands(catKey, cmds)
+    : [{ title: null, items: (cmds || []).slice().sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); }) }];
+
+  const total = groups.reduce(function (n, g) { return n + g.items.length; }, 0);
+  const lines = [];
+  lines.push('╔══━─❦ ✧ ❖ ✧ ─━━╗');
+  lines.push('║  ╭━━✯ ❖ ' + catEmoji + ' ' + title + ' ❖ ✯━━╮');
+  lines.push('║  │');
+
+  for (let g = 0; g < groups.length; g++) {
+    const gr = groups[g];
+    if (gr.title) {
+      lines.push('║  │');
+      lines.push('║  ├─ ' + gr.title);
+    }
+    for (let i = 0; i < gr.items.length; i++) {
+      const c = gr.items[i];
+      let al = '';
+      if (c.aliases && c.aliases.length) al = ' (' + String(c.aliases[0]) + ')';
+      const rowEmoji = gr.title && gr.title.indexOf('JOGO') >= 0 ? '🎮'
+        : gr.title && gr.title.indexOf('RANK') >= 0 ? '🎐'
+        : gr.title && gr.title.indexOf('INTER') >= 0 ? '🎯'
+        : catEmoji;
+      lines.push('║  │  ' + orn + rowEmoji + ' *' + p + c.name + '*' + al);
+    }
+  }
+
+  lines.push('║  │');
+  lines.push('║  │  Total: *' + total + '* comandos');
+  lines.push('║  ╰━━━✦ ❖ ✦━━━╯');
+  lines.push('╚══━─❦ ✧ ❖ ✧ ─━━╝');
+  return lines.join(String.fromCharCode(10));
+}
+
+
+function invalidCommandBox(userTag, typed, suggestion, accuracy, botName) {
+  return (
+`┏━━━━━━━━━━━━━━━━━┓
+┃ ❌ *COMANDO INVÁLIDO*
+┃
+┃ ➥ *Usuário:* ${userTag}
+┃ ➥ *Digitou:* ${typed}
+┃ ➥ *Sugestão:* ${suggestion || '—'}
+┃ ➥ *Precisão:* ${accuracy != null ? accuracy + '%' : '—'}
+┗━━━━━━━━━━━━━━━━━┛
+> ${botName || 'Beatriz Bot'}`
+  );
+}
+
+/** Similaridade simples (Levenshtein ratio) */
+function similarity(a, b) {
+  a = String(a || '').toLowerCase();
+  b = String(b || '').toLowerCase();
+  if (!a || !b) return 0;
+  if (a === b) return 100;
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, function () { return new Array(n + 1).fill(0); });
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  const dist = dp[m][n];
+  const maxLen = Math.max(m, n);
+  return Math.round((1 - dist / maxLen) * 100);
+}
+
+function findSuggestion(typed, commandNames) {
+  let best = null;
+  let bestScore = 0;
+  const t = String(typed || '').toLowerCase();
+  for (let i = 0; i < commandNames.length; i++) {
+    const name = commandNames[i];
+    const sc = similarity(t, name);
+    if (sc > bestScore) {
+      bestScore = sc;
+      best = name;
+    }
+  }
+  if (bestScore < 40) return { suggestion: null, accuracy: bestScore };
+  return { suggestion: best, accuracy: bestScore };
+}
+
+module.exports = {
+  btzGroupCommands,
+  useNewTheme,
+  mainMenuTheme,
+  categoryMenuTheme,
+  invalidCommandBox,
+  similarity,
+  findSuggestion
+};

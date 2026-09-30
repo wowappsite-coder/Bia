@@ -1,0 +1,82 @@
+/**
+ * Menções WhatsApp corretas
+ *
+ * O texto leva @<id> e o array mentions leva o JID real do participante.
+ * O cliente WhatsApp renderiza o NOME (ex: @Neymar jr), não o número.
+ */
+
+/** Parte do @ no texto (sem domínio) */
+function token(jid) {
+  if (!jid) return 'user';
+  return String(jid).split('@')[0].split(':')[0];
+}
+
+function tag(jid) {
+  return '@' + token(jid);
+}
+
+/**
+ * Garante que o JID é o do participante no grupo
+ * (evita JID inventado que o WhatsApp não resolve para nome)
+ */
+async function resolveInGroup(sock, groupJid, jid) {
+  if (!jid) return null;
+  if (!groupJid || !String(groupJid).endsWith('@g.us')) return jid;
+  try {
+    const meta = await sock.groupMetadata(groupJid);
+    const parts = meta.participants || [];
+    // match exacto
+    let p = parts.find((x) => x.id === jid);
+    if (p) return p.id;
+
+    const want = String(jid).replace(/\D/g, '');
+    for (const x of parts) {
+      const idDigits = String(x.id || '').replace(/\D/g, '');
+      const phone = String(x.phoneNumber || x.jid || '').replace(/\D/g, '');
+      if (want && idDigits && (idDigits === want || idDigits.endsWith(want.slice(-9)) || want.endsWith(idDigits.slice(-9)))) {
+        return x.id;
+      }
+      if (want && phone && (phone.endsWith(want.slice(-9)) || want.endsWith(phone.slice(-9)))) {
+        return x.id;
+      }
+    }
+  } catch (_) {}
+  return jid;
+}
+
+/**
+ * Resolve lista de JIDs para participantes reais do grupo
+ */
+async function resolveMany(sock, groupJid, jids) {
+  const out = [];
+  for (const j of jids || []) {
+    const r = await resolveInGroup(sock, groupJid, j);
+    if (r) out.push(r);
+  }
+  return out;
+}
+
+/**
+ * Payload pronto para sendMessage:
+ * { text, mentions }
+ *
+ * textTemplate: use {#} onde # é o índice do jid (0,1,2...)
+ * Ex: '{0} pediu {1} em namoro!'
+ */
+async function build(sock, groupJid, textTemplate, jids) {
+  const resolved = await resolveMany(sock, groupJid, jids);
+  let text = String(textTemplate);
+  resolved.forEach((jid, i) => {
+    text = text.split('{' + i + '}').join(tag(jid));
+  });
+  // também substitui {tag0} style se houver
+  return { text, mentions: resolved };
+}
+
+module.exports = {
+  token,
+  tag,
+  resolveInGroup,
+  resolveMany,
+  build
+};

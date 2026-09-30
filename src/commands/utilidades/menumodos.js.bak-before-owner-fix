@@ -1,0 +1,127 @@
+const { isOwnerJid } = require('../../utils/ownerCheck');
+'use strict';
+
+function useLuxo(ctx) {
+  try {
+    return String(ctx && ctx.prefix || '') === '!';
+  } catch (_) {
+    return false;
+  }
+}
+
+function boxClassico() {
+  return [
+    '╭──〔 ⚙️ MENU MODOS 〕──╮',
+    '> Ativa/desativa funcoes por grupo',
+    '❀────────────────❀',
+    '',
+    '╭──〔 🌐 INTERNET 〕──╮',
+    '◈┃ *modointernet on* — so internet',
+    '◈┃ *modointernet off* — modo normal',
+    '◈┃ *modointernet* — ver estado',
+    '╰──────────────────╯',
+    '',
+    '╭──〔 🌌 ISEKAI 〕──╮',
+    '◈┃ *iskmenu* — menu Isekai',
+    '◈┃ *iskiniciar* — criar personagem',
+    '◈┃ *iskstatus* — ver personagem',
+    '◈┃ *iskdica* — dica do Rafael',
+    '╰──────────────────╯',
+    '',
+    '╭──〔 🛡️ GRUPO / SEGURANCA 〕──╮',
+    '◈┃ *bemvindo on/off* — boas-vindas',
+    '◈┃ *antistatus on/off*',
+    '◈┃ *antilink on/off*',
+    '◈┃ *antiimg on/off*',
+    '╰──────────────────╯',
+    '',
+    '╭──〔 🔥 MENU HENTAI 〕──╮',
+    '◈┃ *menuhentai* — abrir menu 18+',
+    '◈┃ *mhadm on/off* — so ADM ou geral',
+    '╰──────────────────╯',
+    '',
+    '╭──〔 📚 PESQUISA 〕──╮',
+    '◈┃ *menupesquisa* — menu pesquisa',
+    '╰──────────────────╯',
+    '',
+    '╭──〔 💡 DICA 〕──╮',
+    '◈┃ Modo Internet: so comandos de net',
+    '◈┃ Isekai: RPG separado (prefixo isk)',
+    '◈┃ Seguranca / Hentai: so ADM/dono',
+    '╰──────────────────╯',
+    '❀────────────────❀'
+  ].join('\n');
+}
+
+function boxLuxo() {
+  const o = 'ঔৣֳ̤᷈͜͝͡';
+  return [
+    '*╔═══━─❦ۜ✯ۣۜৡ ✧ ❖ ✧ ৡۣۜ✯ۜ─━━═╗*',
+    '*║*  *╭━━✯ ❖ MENU MODOS ❖ ✯━━╮*',
+    '*║*  *│*',
+    '*║*  *│  ' + o + '🌐 INTERNET*',
+    '*║*  *│  ' + o + '🔮 !modointernet on/off*',
+    '*║*  *│  ' + o + '🔮 !modointernet*',
+    '*║*  *│*',
+    '*║*  *│  ' + o + '🌌 ISEKAI*',
+    '*║*  *│  ' + o + '🔮 !iskmenu / !iskiniciar*',
+    '*║*  *│  ' + o + '🔮 !iskstatus / !iskdica*',
+    '*║*  *│*',
+    '*║*  *│  ' + o + '🛡️ SEGURANCA*',
+    '*║*  *│  ' + o + '🔮 !bemvindo on/off*',
+    '*║*  *│  ' + o + '🔮 !antistatus / !antilink / !antiimg*',
+    '*║*  *│*',
+    '*║*  *│  ' + o + '🔥 HENTAI*',
+    '*║*  *│  ' + o + '🔮 !menuhentai*',
+    '*║*  *│  ' + o + '🔮 !mhadm on/off*',
+    '*║*  *│*',
+    '*║*  *│  ' + o + '📚 PESQUISA*',
+    '*║*  *│  ' + o + '🔮 !menupesquisa*',
+    '*║*  *│*',
+    '*║*  *╰━━━ঔৣ͡➳ ✦ ❖ ✦ ➳ঔৣ͡━━━╯*',
+    '*╚══━━❦ۜ✯ۣۜৡ ✧ ❖ ✧ ৡۣۜ✯ۜ─━━══╝*'
+  ].join('\n');
+}
+
+module.exports = [
+  {
+    name: 'menumodos',
+    aliases: [
+      'menumodo',
+      'menu modos',
+      'modos',
+      'menusistemas',
+      'menuswitch'
+    ],
+    category: 'utilidades',
+    description: 'Menu de modos',
+    handler: async (ctx) => {
+      try {
+        const { guardMenu } = require('../../utils/menuAccess');
+        if (!(await guardMenu(ctx, 'modos'))) return;
+      } catch (e) {
+        try {
+          const { guardMenu } = require('../../utils/menuAccess');
+          if (!(await guardMenu(ctx, 'modos'))) return;
+        } catch (e2) {}
+      }
+      try {
+        var ok = false;
+        try {
+          if (typeof ctx.isOwner = (== 'function' && ctx.isOwner()) ok = true) || (typeof isOwnerJid==='function' && isOwnerJid(ctx.sender||ctx.senderJid||ctx.participant||'')); /* BTZ_OWNER_ASSIGN */
+        } catch (e) {}
+        if (!ok) {
+          try {
+            if (typeof ctx.isGroupAdmin === 'function' && (await ctx.isGroupAdmin())) ok = true;
+          } catch (e2) {}
+        }
+        if (!ok) {
+          return ctx.reply('🔒 *Menu Modos* so para *ADM* e *Owner*.');
+        }
+      } catch (g) {}
+
+      const text = useLuxo(ctx) ? boxLuxo() : boxClassico();
+      await ctx.reply(text);
+    }
+  }
+];

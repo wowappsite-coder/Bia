@@ -1,0 +1,177 @@
+'use strict';
+/**
+ * PARTE 3/4 — Fontes de IMAGEM
+ * Ativas: openverse / wikimedia (se engine existir)
+ * Restantes: handler real com aviso de indisponivel
+ */
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const https = require('https');
+const http = require('http');
+
+function safeEngine() {
+  try { return require('../../services/search/engine'); } catch (e) { return null; }
+}
+function safeProviders() {
+  try { return require('../../services/search/providers'); } catch (e) { return null; }
+}
+
+async function unavailable(ctx, name) {
+  return ctx.reply(
+    '⚠️ *' + name + '* nao disponivel automaticamente (API/key ou bloqueio).\n' +
+    'Usa *imagem <texto>* (Openverse / Wikimedia).'
+  );
+}
+
+function downloadToTemp(url) {
+  return new Promise((resolve, reject) => {
+    try {
+      const u = new URL(url);
+      const lib = u.protocol === 'http:' ? http : https;
+      const ext = path.extname(u.pathname || '') || '.jpg';
+      const tmp = path.join(os.tmpdir(), 'bz_p3_' + Date.now() + ext);
+      const file = fs.createWriteStream(tmp);
+      const req = lib.get(url, {
+        headers: { 'User-Agent': 'BeatrizBot/1.0' },
+        timeout: 20000
+      }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          try { file.close(); fs.unlinkSync(tmp); } catch (e) {}
+          return downloadToTemp(res.headers.location).then(resolve, reject);
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          file.close();
+          return reject(new Error('HTTP ' + res.statusCode));
+        }
+        let size = 0;
+        res.on('data', (c) => {
+          size += c.length;
+          if (size > 8 * 1024 * 1024) {
+            try { req.destroy(); } catch (e) {}
+            try { file.close(); fs.unlinkSync(tmp); } catch (e2) {}
+            reject(new Error('grande'));
+          }
+        });
+        res.pipe(file);
+        file.on('finish', () => file.close(() => resolve(tmp)));
+      });
+      req.on('error', reject);
+      req.on('timeout', () => { try { req.destroy(); } catch (e) {} reject(new Error('timeout')); });
+    } catch (e) { reject(e); }
+  });
+}
+
+async function sendImageResult(ctx, q, r) {
+  if (!r || !r.imageUrl) return ctx.reply('❌ Sem imagem.');
+  const caption =
+    '🖼️ *IMAGEM*\n' +
+    '🔎 ' + q + '\n' +
+    '🌐 ' + (r.source || '') +
+    (r.pageUrl ? ('\n🔗 ' + r.pageUrl) : '');
+  let tmp = null;
+  try {
+    tmp = await downloadToTemp(r.imageUrl);
+    if (typeof ctx.sendImage === 'function') {
+      await ctx.sendImage(tmp, caption);
+    } else if (ctx.sock && ctx.jid) {
+      await ctx.sock.sendMessage(ctx.jid, { image: { url: tmp }, caption });
+    } else {
+      await ctx.reply(caption + '\n' + r.imageUrl);
+    }
+  } catch (e) {
+    await ctx.reply(caption + '\n🔗 ' + r.imageUrl);
+  } finally {
+    if (tmp) try { fs.unlinkSync(tmp); } catch (e) {}
+  }
+}
+
+async function doImage(ctx, label) {
+  const q = (ctx.args || []).join(' ').trim();
+  if (!q) return ctx.reply('Ex: *' + (ctx.command || 'imagem') + ' gato preto*');
+  const engine = safeEngine();
+  const prov = safeProviders();
+  try {
+    await ctx.reply('🖼️ A procurar em *' + label + '*...');
+  } catch (e) {}
+  try {
+    let r = null;
+    if (prov && prov.openverseImage) {
+      try { r = await prov.openverseImage(q); } catch (e) {}
+    }
+    if (!r && prov && prov.wikimediaImage) {
+      try { r = await prov.wikimediaImage(q); } catch (e) {}
+    }
+    if (!r && engine && engine.searchImage) {
+      r = await engine.searchImage(q);
+    }
+    if (r && r.imageUrl) return sendImageResult(ctx, q, r);
+  } catch (e) {
+    return ctx.reply('❌ Falha na pesquisa de imagem.');
+  }
+  return ctx.reply('❌ Nenhuma imagem encontrada.');
+}
+
+const LIST = [
+  ['pexels', 'Pexels'],
+  ['pixabay', 'Pixabay'],
+  ['unsplash', 'Unsplash'],
+  ['openverseimg', 'Openverse'],
+  ['wikimediacommons', 'Wikimedia Commons'],
+  ['nasaimg', 'NASA Image Library'],
+  ['noaaimg', 'NOAA'],
+  ['usgsimg', 'USGS'],
+  ['locimg', 'Library of Congress'],
+  ['europeanaimg', 'Europeana'],
+  ['mixkit', 'Mixkit'],
+  ['coverr', 'Coverr'],
+  ['videvo', 'Videvo'],
+  ['videezy', 'Videezy'],
+  ['vecteezy', 'Vecteezy'],
+  ['stockio', 'Stockio'],
+  ['freepik', 'Freepik'],
+  ['flickr', 'Flickr'],
+  ['burst', 'Burst by Shopify'],
+  ['picryl', 'Picryl'],
+  ['rawpixel', 'Rawpixel'],
+  ['publicdomain', 'Public Domain Review'],
+  ['smithsonianimg', 'Smithsonian Open Access'],
+  ['metimg', 'Met Museum'],
+  ['rijksimg', 'Rijksmuseum'],
+  ['artic', 'Art Institute of Chicago'],
+  ['cleveland', 'Cleveland Museum'],
+  ['getty', 'Getty Open Content'],
+  ['wellcomeimg', 'Wellcome Collection'],
+  ['nypl', 'New York Public Library'],
+  ['harvard', 'Harvard Digital'],
+  ['yale', 'Yale Digital'],
+  ['dplaimg', 'DPLA'],
+  ['britishlib', 'British Library'],
+  ['prelinger', 'Prelinger Archives']
+];
+
+// Estes usam o motor real de imagem
+const ACTIVE = new Set(['openverseimg', 'wikimediacommons', 'pexels', 'pixabay', 'unsplash']);
+
+const cmds = LIST.map(function (pair) {
+  const name = pair[0];
+  const label = pair[1];
+  return {
+    name: name,
+    aliases: [],
+    category: 'utilidades',
+    description: 'Imagem via ' + label,
+    async handler(ctx) {
+      // Ativos tentam Openverse/Wikimedia (sem key das outras)
+      if (ACTIVE.has(name) || name === 'openverseimg' || name === 'wikimediacommons') {
+        return doImage(ctx, label);
+      }
+      // Sem API: nao finge resultado
+      return unavailable(ctx, label);
+    }
+  };
+});
+
+module.exports = cmds;

@@ -1,0 +1,20 @@
+{
+  "test@g.us|user@s.whatsapp.net": {
+    "value": 12,
+    "transactionId": "TEST",
+    "provider": "mpesa",
+    "providerName": "M-Pesa",
+    "senderJid": "user@s.whatsapp.net",
+    "groupJid": "test@g.us",
+    "createdAt": 1789059327128
+  },
+  "120363403217396746@g.us|258874288439@s.whatsapp.net": {
+    "value": 3,
+    "transactionId": "PP260915.1720.v74580",
+    "provider": "mpesa",
+    "providerName": "M-Pesa",
+    "senderJid": "258874288439@s.whatsapp.net",
+    "groupJid": "120363403217396746@g.us",
+    "createdAt": 1789544415578
+  }
+}

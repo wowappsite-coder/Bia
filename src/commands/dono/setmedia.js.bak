@@ -1,0 +1,165 @@
+const commandMedia = require('../../services/commandMedia');
+const registry = require('../registry');
+const msgCache = require('../../utils/msgCache');
+
+let downloadMediaMessage = null;
+let downloadContentFromMessage = null;
+try {
+  const baileys = require('@whiskeysockets/baileys');
+  downloadMediaMessage = baileys.downloadMediaMessage;
+  downloadContentFromMessage = baileys.downloadContentFromMessage;
+} catch (_) {}
+
+const silentLogger = {
+  level: 'silent',
+  trace() {}, debug() {}, info() {}, warn() {}, error() {}, fatal() {},
+  child() { return this; }
+};
+
+function unwrap(msg) {
+  if (!msg) return msg;
+  if (msg.ephemeralMessage && msg.ephemeralMessage.message) return unwrap(msg.ephemeralMessage.message);
+  if (msg.viewOnceMessage && msg.viewOnceMessage.message) return unwrap(msg.viewOnceMessage.message);
+  if (msg.viewOnceMessageV2 && msg.viewOnceMessageV2.message) return unwrap(msg.viewOnceMessageV2.message);
+  if (msg.documentWithCaptionMessage && msg.documentWithCaptionMessage.message) {
+    return unwrap(msg.documentWithCaptionMessage.message);
+  }
+  return msg;
+}
+
+function detectMedia(inner) {
+  if (!inner) return null;
+  if (inner.imageMessage) {
+    return { node: inner.imageMessage, type: 'image', mimetype: inner.imageMessage.mimetype || 'image/jpeg' };
+  }
+  if (inner.videoMessage) {
+    const mt = inner.videoMessage.mimetype || 'video/mp4';
+    const isGif = !!inner.videoMessage.gifPlayback || (mt && mt.includes('gif'));
+    return { node: inner.videoMessage, type: isGif ? 'gif' : 'video', mimetype: mt };
+  }
+  if (inner.stickerMessage) {
+    return { node: inner.stickerMessage, type: 'image', mimetype: 'image/webp' };
+  }
+  if (inner.documentMessage && inner.documentMessage.mimetype) {
+    const mt = inner.documentMessage.mimetype;
+    if (mt.startsWith('image/')) return { node: inner.documentMessage, type: 'image', mimetype: mt };
+    if (mt.startsWith('video/')) return { node: inner.documentMessage, type: 'video', mimetype: mt };
+  }
+  return null;
+}
+
+async function downloadQuotedMedia(ctx) {
+  const msg = ctx.msg;
+  let m = unwrap(msg.message || {});
+
+  try {
+    const full = msgCache.getQuotedFull && msgCache.getQuotedFull(msg);
+    if (full && full.message && downloadMediaMessage) {
+      const inner = unwrap(full.message);
+      const det = detectMedia(inner);
+      if (det) {
+        const buf = await downloadMediaMessage(full, 'buffer', {}, {
+          logger: silentLogger,
+          reuploadRequest: ctx.sock.updateMediaMessage.bind(ctx.sock)
+        });
+        if (buf && buf.length) return { buffer: buf, type: det.type, mimetype: det.mimetype };
+      }
+    }
+  } catch (e) {
+    console.error('[setmedia] cache', e.message);
+  }
+
+  const ci =
+    (m.extendedTextMessage && m.extendedTextMessage.contextInfo) ||
+    (m.imageMessage && m.imageMessage.contextInfo) ||
+    (m.videoMessage && m.videoMessage.contextInfo) ||
+    null;
+  const quoted = ci && ci.quotedMessage ? unwrap(ci.quotedMessage) : null;
+  const det = detectMedia(quoted);
+
+  if (det && downloadContentFromMessage) {
+    try {
+      const kind = det.type === 'image' ? 'image' : 'video';
+      const stream = await downloadContentFromMessage(det.node, kind);
+      const chunks = [];
+      for await (const c of stream) chunks.push(c);
+      const buffer = Buffer.concat(chunks);
+      if (buffer.length) return { buffer: buffer, type: det.type, mimetype: det.mimetype };
+    } catch (e) {
+      console.error('[setmedia] stream', e.message);
+    }
+  }
+
+  const selfDet = detectMedia(m);
+  if (selfDet && downloadMediaMessage) {
+    try {
+      const buf = await downloadMediaMessage(msg, 'buffer', {}, {
+        logger: silentLogger,
+        reuploadRequest: ctx.sock.updateMediaMessage.bind(ctx.sock)
+      });
+      if (buf && buf.length) return { buffer: buf, type: selfDet.type, mimetype: selfDet.mimetype };
+    } catch (_) {}
+  }
+  return null;
+}
+
+module.exports = [
+  {
+    name: 'setmedia',
+    aliases: ['setmidia', 'mediacmd'],
+    category: 'dono',
+    description: 'Associa midia a um comando',
+    ownerOnly: true,
+    usage: 'Responda midia: setmedia menu',
+    handler: async (ctx) => {
+      const cmdName = (ctx.args[0] || '').toLowerCase().trim();
+      if (!cmdName) {
+        return ctx.reply('SETMEDIA\n1. Envie imagem/GIF/video\n2. Responda: setmedia menu');
+      }
+      const target = registry.get(cmdName);
+      if (!target) return ctx.reply('Comando ' + cmdName + ' nao existe.');
+      const mainName = target.name;
+      const media = await downloadQuotedMedia(ctx);
+      if (!media || !media.buffer) {
+        return ctx.reply('Nao encontrei midia. Responda uma imagem/GIF/video com: setmedia ' + mainName);
+      }
+      try {
+        commandMedia.set(mainName, media.buffer, media.type, media.mimetype);
+        await ctx.reply('Midia salva para *' + mainName + '*\nTipo: *' + media.type + '*');
+      } catch (e) {
+        await ctx.reply('Falha ao salvar: ' + (e.message || e));
+      }
+    }
+  },
+  {
+    name: 'delmedia',
+    aliases: ['removemedia', 'delmidia'],
+    category: 'dono',
+    description: 'Remove midia de um comando',
+    ownerOnly: true,
+    handler: async (ctx) => {
+      const cmdName = (ctx.args[0] || '').toLowerCase().trim();
+      if (!cmdName) return ctx.reply('Uso: delmedia menu');
+      const target = registry.get(cmdName);
+      const key = target ? target.name : cmdName;
+      if (commandMedia.remove(key)) await ctx.reply('Midia de *' + key + '* removida.');
+      else await ctx.reply('Nenhuma midia em *' + key + '*.');
+    }
+  },
+  {
+    name: 'listmedia',
+    aliases: ['medias', 'listmidia'],
+    category: 'dono',
+    description: 'Lista comandos com midia',
+    ownerOnly: true,
+    handler: async (ctx) => {
+      const rows = commandMedia.list();
+      if (!rows.length) return ctx.reply('Nenhuma midia configurada.');
+      let t = '*MIDIAS POR COMANDO*\n\n';
+      rows.forEach(function (r, i) {
+        t += (i + 1) + '. *' + r.command + '* — ' + r.type + '\n';
+      });
+      await ctx.reply(t.trim());
+    }
+  }
+];

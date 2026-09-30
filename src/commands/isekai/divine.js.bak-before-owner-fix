@@ -1,0 +1,186 @@
+const { isOwnerJid } = require('../../utils/ownerCheck');
+const isekaiDb = require('../../isekai/db');
+const divine = require('../../isekai/divine');
+
+function need(ctx) {
+  const g = isekaiDb.scopeGroup(ctx);
+  const d = isekaiDb.getPlayerData(ctx.sender, g);
+  if (!d || !d.race) return { ok: false, msg: 'Cria personagem: iskiniciar Nome' };
+  divine.ensureDivine(d);
+  divine.clearExpiredBlessings(d);
+  return { ok: true, data: d, group: g };
+}
+function save(ctx, g, d) { isekaiDb.savePlayerData(ctx.sender, g, d); }
+function arg0(ctx) {
+  if (ctx.args && ctx.args[0]) return String(ctx.args[0]).toLowerCase();
+  const t = String(ctx.text || '').trim().split(/\s+/);
+  return (t[0] || '').toLowerCase();
+}
+function isOwnerCtx(ctx) {
+  try {
+    if (typeof ctx.isOwner = (== 'function') return !!ctx.isOwner()) || (typeof isOwnerJid==='function' && isOwnerJid(ctx.sender||ctx.senderJid||ctx.participant||'')); /* BTZ_OWNER_ASSIGN */
+    if (ctx.owner === true) return true;
+  } catch (_) {}
+  return false;
+}
+
+module.exports = [
+  { name: 'iskdeuses', category: 'isekai',
+    handler: async (ctx) => {
+      let t = 'DEUSES\n\n';
+      divine.GODS.forEach(function (g) { t += g.emoji + ' ' + g.name + ' [' + g.id + ']\n'; });
+      t += '\niskorar <id> | iskoferecer <id> iene|item\niskpacto <id> | iskbencaos';
+      await ctx.reply(t);
+    }},
+  { name: 'iskbencaos', category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const b = n.data.blessings || [];
+      if (!b.length) return ctx.reply('Sem bencaos.\nOra com favor alto: iskorar luz');
+      let t = 'BENCAOS\n\n';
+      b.forEach(function (x) {
+        const m = Math.max(0, Math.ceil((x.until - Date.now()) / 60000));
+        t += x.name + ' (\~' + m + 'min)\n';
+      });
+      await ctx.reply(t);
+    }},
+  { name: 'iskorar', category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const id = arg0(ctx);
+      if (!id) return ctx.reply('Uso: iskorar luz');
+      const r = divine.pray(n.data, id);
+      if (!r.ok) return ctx.reply(r.msg);
+      save(ctx, n.group, n.data);
+      let msg = 'Oraste a ' + r.god.emoji + ' ' + r.god.name + '\nFavor: ' + r.favor;
+      if (r.blessed) msg += '\nRecebeste: ' + r.blessed;
+      await ctx.reply(msg);
+    }},
+  { name: 'iskoferecer', category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const parts = (ctx.args && ctx.args.length) ? ctx.args.map(String) : String(ctx.text || '').trim().split(/\s+/).filter(Boolean);
+      const godId = (parts[0] || '').toLowerCase();
+      const item = (parts[1] || 'iene').toLowerCase();
+      if (!godId) return ctx.reply('Uso: iskoferecer luz iene\nou iskoferecer luz cristal');
+      const r = divine.offer(n.data, godId, item);
+      if (!r.ok) return ctx.reply(r.msg);
+      save(ctx, n.group, n.data);
+      await ctx.reply('Oferenda a ' + r.god.name + '\nFavor ' + r.favor + ' (+' + r.delta + ')');
+    }},
+  { name: 'iskpacto', category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const id = arg0(ctx);
+      if (!id) {
+        if (n.data.pact) return ctx.reply('Pacto: ' + n.data.pact.name + '\nQuebrar: iskpacto_quebrar');
+        return ctx.reply('Uso: iskpacto luz\nRequer favor >= 40 e Y80');
+      }
+      const r = divine.makePact(n.data, id);
+      if (!r.ok) return ctx.reply(r.msg);
+      save(ctx, n.group, n.data);
+      await ctx.reply('PACTO com ' + r.god.emoji + ' ' + r.god.name);
+    }},
+  { name: 'iskpacto_quebrar', category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const r = divine.breakPact(n.data);
+      if (!r.ok) return ctx.reply(r.msg);
+      save(ctx, n.group, n.data);
+      await ctx.reply('Pacto quebrado.');
+    }},
+  { name: 'isktranscender', category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const r = divine.tryTranscend(n.data);
+      if (!r.ok) return ctx.reply(r.msg);
+      save(ctx, n.group, n.data);
+      await ctx.reply('TRANSCENDENCIA\nCamada: ' + r.tier + '\n+HP/Mana | 1 carga protecao\nTitulo: Transcendente');
+    }},
+  { name: 'iskpoder', category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const tier = divine.POWER_TIERS[Math.min(n.data.powerTier || 0, divine.POWER_TIERS.length - 1)];
+      await ctx.reply(
+        'PODER\nCamada: ' + tier +
+        '\nTranscendido: ' + (!!n.data.transcended) +
+        '\nCargas imortalidade: ' + (n.data.immortalCharges || 0) +
+        '\nPacto: ' + (n.data.pact ? n.data.pact.name : 'nenhum')
+      );
+    }},
+  { name: 'iskfavor', category: 'isekai',
+    handler: async (ctx) => {
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      let t = 'FAVOR DIVINO\n\n';
+      let any = false;
+      divine.GODS.forEach(function (g) {
+        const f = divine.favor(n.data, g.id);
+        if (f !== 0) { any = true; t += g.emoji + ' ' + g.name + ': ' + f + '\n'; }
+      });
+      if (!any) t += '(neutro com todos)\n';
+      await ctx.reply(t);
+    }},
+  { name: 'iskajuda', category: 'isekai',
+    handler: async (ctx) => {
+      await ctx.reply(
+        'AJUDA ISEKAI\n\n' +
+        'iskiniciar Nome — criar\n' +
+        'iskstatus — ficha\n' +
+        'isklutar / iskatacar — combate\n' +
+        'iskloja / iskcomprar — economia\n' +
+        'iskexplorar / iskviajar — mundo\n' +
+        'iskquest / iskguilda — progressao\n' +
+        'iskparty / isknamorar — social\n' +
+        'iskreencarnar — apos morte\n' +
+        'iskorar / iskpacto / isktranscender — divino\n' +
+        'iskmenu — menu\n\n' +
+        'SEM isk = bot antigo / RPG familia'
+      );
+    }},
+  { name: 'ativartrapaça', aliases: ['ativartrapaca', 'isktrapaca'], category: 'isekai',
+    handler: async (ctx) => {
+      if (!isOwnerCtx(ctx)) return ctx.reply('Sem permissao.');
+      global.__isekaiCheat = global.__isekaiCheat || {};
+      global.__isekaiCheat[ctx.sender] = !global.__isekaiCheat[ctx.sender];
+      console.log('[isekai-admin]', ctx.sender, 'cheat', global.__isekaiCheat[ctx.sender]);
+      await ctx.reply(
+        'Trapaca Isekai: ' + (global.__isekaiCheat[ctx.sender] ? 'ON' : 'OFF') +
+        '\nFerramentas: iskgiveiene | isksetlevel | iskreviver'
+      );
+    }},
+  { name: 'iskgiveiene', category: 'isekai',
+    handler: async (ctx) => {
+      if (!isOwnerCtx(ctx)) return ctx.reply('Sem permissao.');
+      if (!(global.__isekaiCheat && global.__isekaiCheat[ctx.sender])) return ctx.reply('Ativa ativartrapaca primeiro.');
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const amt = parseInt(arg0(ctx) || '100', 10) || 100;
+      n.data.iene = (n.data.iene || 0) + Math.min(10000, Math.max(1, amt));
+      save(ctx, n.group, n.data);
+      console.log('[isekai-admin]', ctx.sender, 'giveiene', amt);
+      await ctx.reply('Admin: IENE = ' + n.data.iene);
+    }},
+  { name: 'isksetlevel', category: 'isekai',
+    handler: async (ctx) => {
+      if (!isOwnerCtx(ctx)) return ctx.reply('Sem permissao.');
+      if (!(global.__isekaiCheat && global.__isekaiCheat[ctx.sender])) return ctx.reply('Ativa ativartrapaca primeiro.');
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      const lv = parseInt(arg0(ctx) || '1', 10) || 1;
+      n.data.level = Math.min(200, Math.max(1, lv));
+      save(ctx, n.group, n.data);
+      console.log('[isekai-admin]', ctx.sender, 'setlevel', n.data.level);
+      await ctx.reply('Admin: level = ' + n.data.level);
+    }},
+  { name: 'iskreviver', category: 'isekai',
+    handler: async (ctx) => {
+      if (!isOwnerCtx(ctx)) return ctx.reply('Sem permissao.');
+      if (!(global.__isekaiCheat && global.__isekaiCheat[ctx.sender])) return ctx.reply('Ativa ativartrapaca primeiro.');
+      const n = need(ctx); if (!n.ok) return ctx.reply(n.msg);
+      n.data.dead = false;
+      n.data.deadPending = false;
+      n.data.hp = n.data.hpMax || 100;
+      n.data.wounds = [];
+      save(ctx, n.group, n.data);
+      console.log('[isekai-admin]', ctx.sender, 'reviver');
+      await ctx.reply('Admin: revivido.');
+    }}
+];

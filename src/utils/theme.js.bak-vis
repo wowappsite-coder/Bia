@@ -1,0 +1,211 @@
+/**
+ * Temas visuais por prefixo
+ * !  → tema "luxo" (novo)
+ * resto / sem prefixo → visual original
+ */
+
+function useNewTheme(ctx) {
+  try {
+    return String(ctx && ctx.prefix || '') === '!';
+  } catch (_) {
+    return false;
+  }
+}
+
+function line(ch, n) {
+  return String(ch).repeat(n);
+}
+
+/** Menu principal — tema ! */
+function mainMenuTheme(stats, botName, prefix, extra) {
+  const p = prefix || '!';
+  const orn = 'ঔৣֳ̤᷈͜͝͡';
+  const diamond = '💠';
+  const extraInfo = extra || {};
+  const mentionToken = extraInfo.mentionToken || 'user';
+  const ownerName = extraInfo.ownerName || 'Ebai';
+  let hora = extraInfo.hora;
+  if (!hora) {
+    const d = new Date();
+    hora = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  const total = (stats && stats.totalMain) != null ? stats.totalMain : '?';
+
+  const lines = [];
+  lines.push('╭──❀✧❖✧❀──╮');
+  lines.push('│  ☆ ❖ 𝐈𝐍𝐅𝐎𝐒 ❖ ☆');
+  lines.push('│');
+  lines.push('│  ' + orn + '✦ *BOT:* ' + (botName || 'BEATRIZ BOT'));
+  lines.push('│  ' + orn + '✦ *USUÁRIO:* @' + mentionToken);
+  lines.push('│  ' + orn + '✦ *DONO:* ' + ownerName);
+  lines.push('│  ' + orn + '✦ *PREFIXO:* [ ' + p + ' ]');
+  lines.push('│  ' + orn + '✦ *HORA:* ' + hora);
+  lines.push('│  ' + orn + '✦ *COMANDOS:* ' + total);
+  lines.push('│');
+  lines.push('│  ───✦ ❖ ✦───');
+  lines.push('│');
+  lines.push('│  ☆ ❖ 𝐏𝐑𝐈𝐍𝐂𝐈𝐏𝐀𝐈𝐒 ❖ ☆');
+  lines.push('│');
+
+  const menus = [
+    'menudono', 'menuadm', 'menugrupo', 'menuinternet',
+    'menubn', 'menudiversao', 'menufig', 'menuimg',
+    'menuseguranca', 'menuutilidades', 'menurpg', 'menuxp',
+    'menueconomia', 'menualuguel', 'menudownload', 'menuwebgames', 'menumodos'
+  ];
+  for (let i = 0; i < menus.length; i++) {
+    lines.push('│  ' + orn + diamond + ' *' + p + menus[i] + '*');
+  }
+
+  lines.push('│');
+  lines.push('│  ☆ ❖ 𝐀𝐓𝐀𝐋𝐇𝐎𝐒 ❖ ☆');
+  lines.push('│');
+  lines.push('│  ' + orn + '🔮 *' + p + 's* (sticker)');
+  lines.push('│  ' + orn + '🔮 *' + p + 'd* (delete)');
+  lines.push('│  ' + orn + '🔮 *' + p + 'p* (play)');
+  lines.push('│  ' + orn + '🔮 *' + p + 'menu*');
+  lines.push('│');
+  lines.push('╰──❀✧❖✧❀──╯');
+  lines.push('');
+  lines.push('> ' + (botName || 'Beatriz Bot'));
+  return lines.join(String.fromCharCode(10));
+}
+
+
+function categoryMenuTheme(meta, cmds, prefix) {
+  const p = prefix || '!';
+  const title = (meta && meta.title) || 'MENU';
+  const orn = 'ঔৣֳ̤᷈͜͝͡';
+
+  // emoji por tipo de menu
+  const emojiMap = {
+    'MENU DONO': '👑',
+    'MENU ADM': '🛡️',
+    'MENU GRUPO': '👥',
+    'MENU INTERNET': '🌐',
+    'MENU BN': '🎮',
+    'MENU DIVERSÃO': '🎭',
+    'MENU STICKERS': '🎴',
+    'MENU IMAGEM': '🎨',
+    'MENU SEGURANÇA': '🔐',
+    'MENU UTILIDADES': '🧰',
+    'MENU RPG/FAMÍLIA': '❤️',
+    'MENU XP/RANK': '⭐',
+    'MENU ECONOMIA': '💰',
+    'MENU ALUGUEL': '🏠',
+    'MENU DOWNLOAD': '📥',
+    'MENU WEB GAMES': '🕹️',
+    'MENU MODOS': '⚙️'
+  };
+
+  // tenta pelo title, senao pelo emoji do meta, senao generico
+  let catEmoji = emojiMap[title] || (meta && meta.emoji) || '🔮';
+  // se title tiver palavras-chave
+  const tl = String(title).toUpperCase();
+  if (!emojiMap[title]) {
+    if (tl.indexOf('DONO') >= 0) catEmoji = '👑';
+    else if (tl.indexOf('ADM') >= 0) catEmoji = '🛡️';
+    else if (tl.indexOf('GRUPO') >= 0) catEmoji = '👥';
+    else if (tl.indexOf('INTERNET') >= 0) catEmoji = '🌐';
+    else if (tl.indexOf('BN') >= 0) catEmoji = '🎮';
+    else if (tl.indexOf('DIVERS') >= 0) catEmoji = '🎭';
+    else if (tl.indexOf('STICK') >= 0 || tl.indexOf('FIG') >= 0) catEmoji = '🎴';
+    else if (tl.indexOf('IMAG') >= 0) catEmoji = '🎨';
+    else if (tl.indexOf('SEGUR') >= 0) catEmoji = '🔐';
+    else if (tl.indexOf('UTIL') >= 0) catEmoji = '🧰';
+    else if (tl.indexOf('RPG') >= 0 || tl.indexOf('FAM') >= 0) catEmoji = '❤️';
+    else if (tl.indexOf('XP') >= 0 || tl.indexOf('RANK') >= 0) catEmoji = '⭐';
+    else if (tl.indexOf('ECON') >= 0) catEmoji = '💰';
+    else if (tl.indexOf('ALUG') >= 0) catEmoji = '🏠';
+    else if (tl.indexOf('DOWN') >= 0) catEmoji = '📥';
+    else if (tl.indexOf('GAME') >= 0 || tl.indexOf('JOGO') >= 0) catEmoji = '🕹️';
+    else if (tl.indexOf('MODO') >= 0) catEmoji = '⚙️';
+  }
+
+  const sorted = (cmds || []).slice().sort(function (a, b) {
+    return String(a.name).localeCompare(String(b.name));
+  });
+
+  const lines = [];
+  lines.push('╔══━─❦ ✧ ❖ ✧ ─━━╗');
+  lines.push('║  ╭━━✯ ❖ ' + catEmoji + ' ' + title + ' ❖ ✯━━╮');
+  lines.push('║  │');
+
+  for (let i = 0; i < sorted.length; i++) {
+    const c = sorted[i];
+    let al = '';
+    if (c.aliases && c.aliases.length) {
+      al = ' (' + String(c.aliases[0]) + ')';
+    }
+    // ঔৣֳ̤᷈͜͝͡ + emoji do menu + *!comando*
+    lines.push('║  │  ' + orn + catEmoji + ' *' + p + c.name + '*' + al);
+  }
+
+  lines.push('║  │');
+  lines.push('║  │  Total: *' + sorted.length + '* comandos');
+  lines.push('║  ╰━━━✦ ❖ ✦━━━╯');
+  lines.push('╚══━─❦ ✧ ❖ ✧ ─━━╝');
+  return lines.join(String.fromCharCode(10));
+}
+
+
+
+function invalidCommandBox(userTag, typed, suggestion, accuracy, botName) {
+  return (
+`┏━━━━━━━━━━━━━━━━━┓
+┃ ❌ *COMANDO INVÁLIDO*
+┃
+┃ ➥ *Usuário:* ${userTag}
+┃ ➥ *Digitou:* ${typed}
+┃ ➥ *Sugestão:* ${suggestion || '—'}
+┃ ➥ *Precisão:* ${accuracy != null ? accuracy + '%' : '—'}
+┗━━━━━━━━━━━━━━━━━┛
+> ${botName || 'Beatriz Bot'}`
+  );
+}
+
+/** Similaridade simples (Levenshtein ratio) */
+function similarity(a, b) {
+  a = String(a || '').toLowerCase();
+  b = String(b || '').toLowerCase();
+  if (!a || !b) return 0;
+  if (a === b) return 100;
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, function () { return new Array(n + 1).fill(0); });
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  const dist = dp[m][n];
+  const maxLen = Math.max(m, n);
+  return Math.round((1 - dist / maxLen) * 100);
+}
+
+function findSuggestion(typed, commandNames) {
+  let best = null;
+  let bestScore = 0;
+  const t = String(typed || '').toLowerCase();
+  for (let i = 0; i < commandNames.length; i++) {
+    const name = commandNames[i];
+    const sc = similarity(t, name);
+    if (sc > bestScore) {
+      bestScore = sc;
+      best = name;
+    }
+  }
+  if (bestScore < 40) return { suggestion: null, accuracy: bestScore };
+  return { suggestion: best, accuracy: bestScore };
+}
+
+module.exports = {
+  useNewTheme,
+  mainMenuTheme,
+  categoryMenuTheme,
+  invalidCommandBox,
+  similarity,
+  findSuggestion
+};
